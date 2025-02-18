@@ -1,9 +1,10 @@
 import asyncio
 import websockets
 from websockets import ClientConnection, serve
-from .player import Player, PlayerMessageType
+from .player import Player
+from .messages import PlayerMessageType
 from .world import World
-
+from .command_parser import parse
 class Server:
     def __init__(self, world: World):
         self.clients: list[tuple[Player, ClientConnection]] = []
@@ -28,17 +29,19 @@ class Server:
         async def handle_websocket():
             try: 
                 async for message in websocket:
-                    await player.handle_input(message)
-            except Exception:
+                    await parse(self.world, player, message)
+            except Exception as e:
                 print("Error in handle_websocket")
+                print(e)
                 pass
         
         async def handle_player_output():
             try:
                 async for message in player:
                     await websocket.send(str(message))
-            except Exception:
+            except Exception as e:
                 print("Error in player output")
+                print(e)
                 pass
         
         try:
@@ -110,10 +113,6 @@ async def main():
     world.load_from_file("world1.json")
     server = Server(world)
     await server.start()
-    # player = world.login_player("John")
-    # await player.handle_input("nort")
-    # async for message in player:
-    #     print(message)
 
 if __name__ == "__main__":
     asyncio.run(main())
