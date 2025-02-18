@@ -1,7 +1,7 @@
 import asyncio
 import websockets
 from websockets import ClientConnection, serve
-from .player import Player
+from .player import Player, PlayerMessageType
 from .world import World
 
 class Server:
@@ -16,22 +16,18 @@ class Server:
         await websocket.send("Welcome to the game!")
         await websocket.send("What is your name?")
         name = (await websocket.recv()).strip()
-        player = self.world.login_player(name)
-        return player
+        return self.world.login_player(name) 
     
     async def handle_client(self, websocket: ClientConnection) -> None:
         """
         Handle a single client connection.
         """
-        print("Logging User In")
         player = await self.login_user(websocket)
-        print(f"Done Logging In: {player.name}")
         self.clients.append((player, websocket))
 
         async def handle_websocket():
             try: 
                 async for message in websocket:
-                    print(f"Received message: {message}")
                     await player.handle_input(message)
             except Exception:
                 print("Error in handle_websocket")
@@ -40,7 +36,7 @@ class Server:
         async def handle_player_output():
             try:
                 async for message in player:
-                    await websocket.send(message)
+                    await websocket.send(str(message))
             except Exception:
                 print("Error in player output")
                 pass
@@ -58,7 +54,6 @@ class Server:
                 return_when=asyncio.FIRST_COMPLETED
             )
             
-            print("Cleaning Up")
             # Cancel any remaining tasks
             if websocket_task in pending:
                 websocket_task.cancel()
@@ -75,7 +70,6 @@ class Server:
                     pass
 
         finally:
-            print("Logging Out")
             self.world.logout_player(player)
             self.clients = [(p, c) for p, c in self.clients if c != websocket]
             await self.broadcast(f"{player.name} left the server")
@@ -86,14 +80,29 @@ class Server:
         """
         for player, client in self.clients:
             try:
-                await client.send(message)
+                await player.send_message(PlayerMessageType.SERVER, message)
             except websockets.exceptions.ConnectionClosed:
                 pass
 
     async def start(self, host: str = "localhost", port: int = 8765) -> None:
+        async def world_ticker():
+            while True:
+                await self.world.tick()
+                await asyncio.sleep(1)
+
         async with serve(self.handle_client, host, port) as server:
             print(f"Server started on ws://{host}:{port}")
-            await server.serve_forever()
+            server_task = asyncio.create_task(server.serve_forever())
+            ticker_task = asyncio.create_task(world_ticker())
+            
+            try:
+                # Run both tasks until one completes or there's an error
+                await asyncio.gather(server_task, ticker_task)
+            except asyncio.CancelledError:
+                # Handle graceful shutdown
+                server_task.cancel()
+                ticker_task.cancel()
+                await asyncio.gather(server_task, ticker_task, return_exceptions=True)
 
 
 async def main():

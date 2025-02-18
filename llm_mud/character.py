@@ -9,3 +9,5 @@ class Character:
         self.id = str(uuid.uuid4())
         self.world: "World" = world
     
+    async def tick(self) -> None:
+        pass

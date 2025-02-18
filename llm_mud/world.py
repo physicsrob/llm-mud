@@ -1,3 +1,4 @@
+import asyncio
 from pathlib import Path
 from collections import defaultdict
 from .character import Character
@@ -71,15 +72,15 @@ class World:
     def move_character(self, character_id: str, direction: str) -> Room | None:
         character = self.characters[character_id]
         current_room = self.get_character_room(character_id)
-        print(f"Current room: {current_room}")
         if current_room is None:
             return
-        print(f"Current room exits: {current_room.exits}")
         if direction not in current_room.exits:
-            print("No exit in that direction")
             return
         target_room = current_room.exits[direction]
         self.room_characters[current_room.id].remove(character)
         self.room_characters[target_room.id].append(character)
         return target_room
-    
+
+    async def tick(self) -> None:
+        await asyncio.gather(*(character.tick() for character in self.characters.values()))
+
