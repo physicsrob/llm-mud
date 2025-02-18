@@ -10,7 +10,11 @@ license = { file = "LICENSE" }
 dependencies = [
     "pydantic>=2.5.2",
     "websockets>=15.0",
+    "click>=8.1.0",
 ]
+
+[project.scripts]
+llmmud = "llm_mud.cli:main"
 
 [build-system]
 requires = ["hatchling"]
