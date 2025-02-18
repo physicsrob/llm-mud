@@ -1,8 +1,8 @@
 import asyncio
 import websockets
 from websockets import ClientConnection, serve
-from player import Player
-from world import World
+from .player import Player
+from .world import World
 
 class Server:
     def __init__(self, world: World):

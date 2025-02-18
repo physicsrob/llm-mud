@@ -1,4 +1,4 @@
-from room import Room
+from .room import Room
 import uuid
 
 class Character:

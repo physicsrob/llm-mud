@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field
-from save import RoomData
+from .save import RoomData
 
 class Room:
     """Represents a room in the game world with its properties and available exits."""

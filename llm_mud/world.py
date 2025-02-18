@@ -1,9 +1,9 @@
 from pathlib import Path
 from collections import defaultdict
-from character import Character
-from player import Player
-from room import Room
-from save import load_world_data
+from .character import Character
+from .player import Player
+from .room import Room
+from .save import load_world_data
 
 class World:
     """Manages the game world, including rooms and their relationships."""

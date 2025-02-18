@@ -1,2 +1,0 @@
-pydantic>=2.5.2 
-websockets>=15.0 
