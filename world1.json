@@ -1,0 +1,43 @@
+{
+  "starting_room_id": "town_square",
+  "rooms": {
+    "town_square": {
+      "name": "Town Square",
+      "description": "A bustling town square with a fountain in the center. The cobblestones are worn smooth from years of foot traffic.",
+      "exits": {
+        "north": "market_street",
+        "east": "temple_grounds",
+        "west": "tavern"
+      }
+    },
+    "market_street": {
+      "name": "Market Street",
+      "description": "A wide street lined with merchant stalls. The scent of spices and fresh bread fills the air.",
+      "exits": {
+        "south": "town_square",
+        "north": "market_end"
+      }
+    },
+    "market_end": {
+      "name": "Market Square",
+      "description": "The street opens into a large square where farmers bring their carts on market days. A stone wall marks the city boundary.",
+      "exits": {
+        "south": "market_street"
+      }
+    },
+    "temple_grounds": {
+      "name": "Temple Grounds",
+      "description": "A peaceful garden surrounds an ancient temple. Stone lanterns line the path.",
+      "exits": {
+        "west": "town_square"
+      }
+    },
+    "tavern": {
+      "name": "The Rusty Barrel Tavern",
+      "description": "A cozy tavern with a roaring fireplace. The wooden floors creak beneath your feet.",
+      "exits": {
+        "east": "town_square"
+      }
+    }
+  }
+}
