@@ -26,21 +26,24 @@ Follow these instructions precisely:
 3. If none of the above, return an error message with a user friendly explanation
 """
 
+
 class ParseResult(BaseModel):
     """Result of parsing a player's command input"""
+
     action: CharacterAction | None = Field(
-        default=None,
-        description='The parsed player action if command was valid'
+        default=None, description="The parsed player action if command was valid"
     )
     error_msg: str | None = Field(
-        default=None, 
-        description='Error message if command could not be parsed or was invalid'
+        default=None,
+        description="Error message if command could not be parsed or was invalid",
     )
+
 
 @dataclass
 class Deps:
     world: "World"
     player: "Player"
+
 
 model = OpenAIModel(
     command_parser_model,
@@ -54,9 +57,10 @@ command_parser_agent = Agent(
     retries=2,
     system_prompt=prompt,
     model_settings={
-        'temperature': 0.0,
-    }
+        "temperature": 0.0,
+    },
 )
+
 
 @command_parser_agent.system_prompt
 async def system_prompt(ctx: RunContext[Deps]) -> str:
@@ -66,22 +70,27 @@ async def system_prompt(ctx: RunContext[Deps]) -> str:
 
     return f"""The following exits are available: {", ".join(room.exits.keys())}\n"""
 
+
 async def parse(world: "World", player: "Player", command_input: str) -> ParseResult:
     """Parse and execute a player command.
-    
+
     Args:
         world: The game world instance
         player: The player issuing the command
         command_input: The command string to parse
-        
+
     Returns:
         ParseResult containing either a PlayerAction or error message
     """
     room = player.get_current_room()
     if command_input in room.exits:
-        return ParseResult(action=CharacterAction(action_type="move", direction=command_input))
+        return ParseResult(
+            action=CharacterAction(action_type="move", direction=command_input)
+        )
     elif command_input in ("l", "look", "describe"):
         return ParseResult(action=CharacterAction(action_type="look"))
     else:
-        result = await command_parser_agent.run(command_input, deps=Deps(world=world, player=player))
+        result = await command_parser_agent.run(
+            command_input, deps=Deps(world=world, player=player)
+        )
         return result.data
