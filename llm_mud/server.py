@@ -2,14 +2,15 @@ import asyncio
 import websockets
 from websockets import ClientConnection, serve
 from .player import Player
-from .messages import PlayerMessageType
 from .world import World
 from .command_parser import parse
+
+
 class Server:
     def __init__(self, world: World):
         self.clients: list[tuple[Player, ClientConnection]] = []
         self.world = world
-    
+
     async def login_user(self, websocket: ClientConnection) -> Player:
         """
         Login a user and add them to the world.
@@ -17,8 +18,8 @@ class Server:
         await websocket.send("Welcome to the game!")
         await websocket.send("What is your name?")
         name = (await websocket.recv()).strip()
-        return self.world.login_player(name) 
-    
+        return self.world.login_player(name)
+
     async def handle_client(self, websocket: ClientConnection) -> None:
         """
         Handle a single client connection.
@@ -27,14 +28,14 @@ class Server:
         self.clients.append((player, websocket))
 
         async def handle_websocket():
-            try: 
+            try:
                 async for message in websocket:
-                    await parse(self.world, player, message)
+                    await player.process_command(message)
             except Exception as e:
                 print("Error in handle_websocket")
                 print(e)
                 pass
-        
+
         async def handle_player_output():
             try:
                 async for message in player:
@@ -43,20 +44,19 @@ class Server:
                 print("Error in player output")
                 print(e)
                 pass
-        
+
         try:
             await self.broadcast(f"{player.name} joined the server")
-            
+
             # Create tasks
             websocket_task = asyncio.create_task(handle_websocket())
             player_task = asyncio.create_task(handle_player_output())
-            
+
             # Wait for either task to complete
             done, pending = await asyncio.wait(
-                [websocket_task, player_task],
-                return_when=asyncio.FIRST_COMPLETED
+                [websocket_task, player_task], return_when=asyncio.FIRST_COMPLETED
             )
-            
+
             # Cancel any remaining tasks
             if websocket_task in pending:
                 websocket_task.cancel()
@@ -66,7 +66,7 @@ class Server:
                     pass
 
             if player_task in pending:
-                player_task.cancel() 
+                player_task.cancel()
                 try:
                     await player_task
                 except asyncio.CancelledError:
@@ -76,14 +76,14 @@ class Server:
             self.world.logout_player(player)
             self.clients = [(p, c) for p, c in self.clients if c != websocket]
             await self.broadcast(f"{player.name} left the server")
-    
+
     async def broadcast(self, message: str) -> None:
         """
         Send a text message to all connected clients except the sender.
         """
         for player, client in self.clients:
             try:
-                await player.send_message(PlayerMessageType.SERVER, message)
+                await player.send_message("server", message)
             except websockets.exceptions.ConnectionClosed:
                 pass
 
@@ -97,7 +97,7 @@ class Server:
             print(f"Server started on ws://{host}:{port}")
             server_task = asyncio.create_task(server.serve_forever())
             ticker_task = asyncio.create_task(world_ticker())
-            
+
             try:
                 # Run both tasks until one completes or there's an error
                 await asyncio.gather(server_task, ticker_task)
@@ -113,6 +113,7 @@ async def main():
     world.load_from_file("world1.json")
     server = Server(world)
     await server.start()
+
 
 if __name__ == "__main__":
     asyncio.run(main())

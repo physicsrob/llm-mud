@@ -3,6 +3,7 @@ import websockets
 import sys
 from websockets.client import WebSocketClientProtocol
 
+
 async def handle_input(websocket: WebSocketClientProtocol) -> None:
     """Read input from console and send to server."""
     while True:
@@ -12,6 +13,7 @@ async def handle_input(websocket: WebSocketClientProtocol) -> None:
         except (EOFError, KeyboardInterrupt):
             break
 
+
 async def handle_messages(websocket: WebSocketClientProtocol) -> None:
     """Receive and print messages from the server."""
     try:
@@ -20,19 +22,19 @@ async def handle_messages(websocket: WebSocketClientProtocol) -> None:
     except websockets.exceptions.ConnectionClosed:
         pass
 
+
 async def main(uri: str = "ws://localhost:8765") -> None:
     """Connect to the MUD server and handle I/O."""
     try:
         async with websockets.connect(uri) as websocket:
             input_task = asyncio.create_task(handle_input(websocket))
             message_task = asyncio.create_task(handle_messages(websocket))
-            
+
             # Wait for either task to complete
             done, pending = await asyncio.wait(
-                [input_task, message_task],
-                return_when=asyncio.FIRST_COMPLETED
+                [input_task, message_task], return_when=asyncio.FIRST_COMPLETED
             )
-            
+
             # Cancel remaining tasks
             for task in pending:
                 task.cancel()
@@ -49,5 +51,6 @@ async def main(uri: str = "ws://localhost:8765") -> None:
     finally:
         sys.exit(0)
 
+
 if __name__ == "__main__":
-    asyncio.run(main()) 
+    asyncio.run(main())
