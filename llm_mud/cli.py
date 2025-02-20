@@ -2,9 +2,9 @@ import asyncio
 import click
 import sys
 from pathlib import Path
-from .world import World
-from .server import main as server_main
-from .client import main as client_main
+from .core.world import World
+from .networking.server import main as server_main
+from .networking.client import main as client_main
 
 
 async def run_client():

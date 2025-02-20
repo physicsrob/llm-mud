@@ -4,7 +4,7 @@ from pydantic import BaseModel, Field
 from pydantic_ai import Agent, RunContext
 from pydantic_ai.models.openai import OpenAIModel
 
-from .config import command_parser_model, OPENROUTER_BASE_URL, OPENROUTER_API_KEY
+from ..config import command_parser_model, OPENROUTER_BASE_URL, OPENROUTER_API_KEY
 from .character_action import CharacterAction
 from devtools import debug
 
@@ -12,7 +12,7 @@ prompt = """
 You are a command parser for a text-based adventure game.
 You will parse the players command and return a command result object
 
-Follow these instructions precisely:
+Follow these instructions precisely. 
 1. See if the command seems to be asking to move. 
     If so see if the direction is one of the available exits in the current location.
     If the direction is one of the available exits:
@@ -29,7 +29,6 @@ Follow these instructions precisely:
 
 class ParseResult(BaseModel):
     """Result of parsing a player's command input"""
-
     action: CharacterAction | None = Field(
         default=None, description="The parsed player action if command was valid"
     )

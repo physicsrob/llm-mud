@@ -1,8 +1,8 @@
 import os
 
 # Model configuration for command parser
-# command_parser_model = "anthropic/claude-3.5-haiku"
-command_parser_model = "mistralai/mistral-nemo"
+command_parser_model = "anthropic/claude-3.5-haiku"
+#command_parser_model = "mistralai/mistral-nemo"
 # command_parser_model = "deepseek/deepseek-chat"
 # command_parser_model = "microsoft/phi-4" # DOESNT WORK
 

@@ -1,6 +1,6 @@
 from .character import Character
 from asyncio import Queue
-from .messages import MessageToPlayer, MessageToPlayerType
+from ..networking.messages import MessageToPlayer, MessageToPlayerType
 from .command_parser import parse
 from .character_action import CharacterAction
 

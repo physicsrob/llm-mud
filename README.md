@@ -1,25 +1,72 @@
 # LLM Mud
 
-A simple text-based game engine inspired by Multi-User Dungeons (MUDs). This proof-of-concept focuses on implementing core game world functionality, specifically rooms and navigation between them.
+A text-based game engine inspired by Multi-User Dungeons (MUDs). The goal of this project is to explore the use of LLMs to power a text-based game.
 
+## Features
+
+- Multi-player support with client-server architecture
+- Real-time player interactions and movement
+- Dynamic world loading from JSON configuration
+- Command parsing system for player actions
+- Character system with basic attributes
+- Room-based navigation and exploration
+
+## Installation
+
+```bash
+# Clone the repository
+git clone https://github.com/yourusername/llm-mud.git
+cd llm-mud
+
+# Install dependencies
+pip install -e .
+```
+
+## Usage
+
+You can run the game in different modes:
+
+```bash
+# Start in development mode (single player)
+llmmud dev
+
+# Start the server
+llmmud server
+
+# Start a client
+llmmud client
+```
 
 ## Project Structure
-- `save.py`: Handles serialization and deserialization of game world data
-- `room.py`: Implements core Room functionality
-- `world.py`: Manages the game world and relationships between rooms
-- `loop.py`: Contains the main game loop and command processing
+
+- `server.py`: Implements the game server and manages client connections
+- `client.py`: Handles client-side networking and game state
+- `cli.py`: Command-line interface for player interaction
+- `world.py`: Manages the game world, rooms, and game state
+- `room.py`: Defines room structure and properties
+- `character.py`: Base character class for players and NPCs
+- `player.py`: Player-specific functionality and state
+- `command_parser.py`: Processes and validates player commands
+- `character_action.py`: Defines available character actions
+- `messages.py`: Message types for client-server communication
+- `config.py`: Configuration settings
+- `save.py`: Game state serialization and persistence
 
 ## Design Philosophy
 
 This project emphasizes:
-- Clear separation of concerns between data and behavior
+- Clean separation between client and server responsibilities
 - Type safety using Python type hints
-- Simple, extensible architecture that can grow with new features
+- Modular architecture for easy feature extension
+- Real-time multiplayer interaction
+- Data-driven world configuration
 
 ## Future Considerations
 
-While not yet implemented, the architecture is designed to eventually support:
-- Characters (players and NPCs)
+While the basic multiplayer framework is implemented, the architecture is designed to eventually support:
+- More complex character interactions
 - Items and inventories
-- More complex room connections
-- Game state persistence
+- Combat system
+- Persistent game state
+- Chat and emote systems
+- Dynamic world events
