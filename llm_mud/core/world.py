@@ -1,11 +1,27 @@
 import asyncio
 from collections import defaultdict
 from typing import Optional
+from dataclasses import dataclass
+from pydantic import BaseModel, Field
 
 from .character import Character
 from .player import Player
-from .room import Room
+from .room import Room, RoomDescription
 from .character_action import CharacterAction
+
+class WorldDescription(BaseModel):
+    title: str = Field(
+        description="The title of the game world"
+    )
+    brief_description: str = Field(
+        description="A short one pargraph description of the world shown everytime you log in"
+    )
+    long_description: str = Field(
+        description="A detailed description of the world shown when examining it"
+    )
+    other_details: str = Field(
+        description="Other details about the world that are not directly observable by the player"
+    )
 
 class World:
     """
@@ -13,19 +29,20 @@ class World:
     Provides factory methods for world construction and APIs for state modification.
     """
 
-    def __init__(self):
+    def __init__(self, description: WorldDescription):
+        self.description = description
         self.rooms: dict[str, Room] = {}
         self.characters: dict[str, Character] = {}
         self.room_characters: dict[str, list[Character]] = defaultdict(list)
         self.starting_room_id: Optional[str] = None
 
     # Factory methods for world construction
-    def create_room(self, room_id: str, name: str, description: str) -> Room:
+    def create_room(self, room_id: str, description: RoomDescription) -> Room:
         """Create and register a new room in the world."""
         if room_id in self.rooms:
             raise ValueError(f"Room with id '{room_id}' already exists")
         
-        room = Room(room_id, name, description)
+        room = Room(room_id, description)
         self.rooms[room_id] = room
         return room
 

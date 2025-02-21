@@ -1,14 +1,15 @@
 from pathlib import Path
 from pydantic import BaseModel
-from .core.world import World
+from .core.world import World, WorldDescription
+from .core.room import RoomDescription
 
-class RoomData(BaseModel):
-    name: str
-    description: str
+class SerializedRoom(BaseModel):
+    description: RoomDescription
     exits: dict[str, str]
 
-class WorldData(BaseModel):
-    rooms: dict[str, RoomData]
+class SerializedWorld(BaseModel):
+    description: WorldDescription
+    rooms: dict[str, SerializedRoom]
     starting_room_id: str
 
 def load_world(filepath: str | Path) -> World:
@@ -21,14 +22,13 @@ def load_world(filepath: str | Path) -> World:
     Returns:
         A fully constructed World instance
     """
-    world_data = WorldData.model_validate_json(Path(filepath).read_text())
-    world = World()
+    world_data = SerializedWorld.model_validate_json(Path(filepath).read_text())
+    world = World(description=world_data.description)
     
     # First create all rooms
     for room_id, room_data in world_data.rooms.items():
         world.create_room(
             room_id=room_id,
-            name=room_data.name,
             description=room_data.description
         )
     
@@ -43,5 +43,18 @@ def load_world(filepath: str | Path) -> World:
 
 def save_world(world: World, filepath: str | Path) -> None:
     """Save world state to a JSON file"""
-    # TODO: Implement world serialization
-    pass 
+    serialized_rooms = {
+        room_id: SerializedRoom(
+            description=room.description,
+            exits={direction: dest.id for direction, dest in room.exits.items()}
+        )
+        for room_id, room in world.rooms.items()
+    }
+    
+    serialized_world = SerializedWorld(
+        description=world.description,
+        rooms=serialized_rooms,
+        starting_room_id=world.starting_room_id
+    )
+    
+    Path(filepath).write_text(serialized_world.model_dump_json(indent=2)) 
