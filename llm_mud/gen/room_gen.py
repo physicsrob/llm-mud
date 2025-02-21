@@ -3,8 +3,8 @@ from pydantic_ai import Agent
 from pydantic_ai.models.openai import OpenAIModel
 
 from ..config import creative_model, OPENROUTER_BASE_URL, OPENROUTER_API_KEY
-from .room import RoomDescription
-from .world import WorldDescription
+from ..core.room import RoomDescription
+from ..core.world import WorldDescription
 
 prompt = """
 You are a master environment designer for an immersive text adventure. Create a captivating room that players will remember exploring.
@@ -84,7 +84,7 @@ async def generate_starting_room(world: WorldDescription) -> RoomDescription:
     result = await room_gen_agent.run(
         user_prompt,
     )
-    return result.data 
+    return result.data
 
 
 async def generate_room(world: WorldDescription) -> RoomDescription:

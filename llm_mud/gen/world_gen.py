@@ -3,7 +3,7 @@ from pydantic_ai import Agent, RunContext
 from pydantic_ai.models.openai import OpenAIModel
 
 from ..config import creative_model, OPENROUTER_BASE_URL, OPENROUTER_API_KEY
-from .world import WorldDescription
+from ..core.world import WorldDescription
 
 prompt = """
 You are a master worldbuilder for an interactive text adventure.

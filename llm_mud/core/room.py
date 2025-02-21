@@ -4,12 +4,19 @@ class RoomDescription(BaseModel):
     title: str = Field(
         description="The name/title of the room"
     )
+    id: str = Field(
+        description="Typically the title, but with spaces replaced with underscores, all lowercase, etc"
+    )
     brief_description: str = Field(
         description="A short description shown when entering the room"
     )
     long_description: str = Field(
         description="A detailed description shown when examining the room"
     )
+    exit_descriptions: dict[str, str] = Field(
+        description="A dictionary of exit descriptions for each direction"
+    )
+
 
 class Room:
     """A location in the game world that characters can occupy."""
