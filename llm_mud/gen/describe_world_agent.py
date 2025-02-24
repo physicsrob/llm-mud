@@ -1,9 +1,9 @@
-from pydantic import BaseModel, Field
 from pydantic_ai import Agent, RunContext
 from pydantic_ai.models.openai import OpenAIModel
 
+from llm_mud.gen.data_model import WorldDescription
+
 from ..config import creative_model, OPENROUTER_BASE_URL, OPENROUTER_API_KEY
-from ..core.world import WorldDescription
 
 prompt = """
 You are a master worldbuilder for an interactive text adventure.
@@ -24,6 +24,9 @@ The world should:
 - Balance whimsy with a sense of wonder and light danger
 - Feature at least one unusual characteristic that makes this world unique
 - Leave open questions that spark curiosity
+- Set the stage for a rich, engaging story
+- Not be focused on a single roo or location, but rather a theme or setting that can be explored in a series of locations
+
 
 Avoid:
 - Generic fantasy tropes without fresh twists
@@ -54,20 +57,21 @@ world_gen_agent = Agent(
     retries=2,
     system_prompt=prompt,
     model_settings={
-        "temperature": 0.7, 
+        "temperature": 0.7,
     },
 )
 
-async def generate_world(theme: str) -> WorldDescription:
+
+async def describe_world(theme: str) -> WorldDescription:
     """Generate a world description, optionally based on a theme.
-    
+
     Args:
         theme: Optional theme to influence the world generation
-        
+
     Returns:
         WorldDescription containing the generated world details
     """
     user_prompt = f"Generate a new world description with the theme: {theme}"
-        
+
     result = await world_gen_agent.run(user_prompt)
-    return result.data 
+    return result.data

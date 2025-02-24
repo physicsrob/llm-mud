@@ -1,50 +1,34 @@
 from pydantic import BaseModel, Field
-
-class RoomDescription(BaseModel):
-    title: str = Field(
-        description="The name/title of the room"
-    )
-    id: str = Field(
-        description="Typically the title, but with spaces replaced with underscores, all lowercase, etc"
-    )
-    brief_description: str = Field(
-        description="A short description shown when entering the room"
-    )
-    long_description: str = Field(
-        description="A detailed description shown when examining the room"
-    )
-    exit_descriptions: dict[str, str] = Field(
-        description="A dictionary of exit descriptions for each direction"
-    )
+from typing import Dict, List, Optional
 
 
-class Room:
-    """A location in the game world that characters can occupy."""
+class Room(BaseModel):
+    """
+    Room in the game world.
 
-    def __init__(self, room_id: str, description: RoomDescription):
-        self.id: str = room_id
-        self.description: RoomDescription = description
-        self.exits: dict[str, "Room"] = {}
+    Contains both descriptive properties and
+    runtime state that changes during gameplay.
+    """
 
-    def add_exit(self, direction: str, destination: "Room") -> None:
-        """Add an exit from this room to another room."""
-        self.exits[direction] = destination
+    # ID
+    id: str
 
-    def remove_exit(self, direction: str) -> None:
-        """Remove an exit from this room."""
-        self.exits.pop(direction, None)
+    # Descriptive properties (generally immutable after creation)
+    title: str
+    brief_description: str
+    long_description: str
 
-    def get_exit(self, direction: str) -> "Room | None":
-        """Get the room that an exit leads to."""
-        return self.exits.get(direction)
+    # Runtime state (mutable during gameplay)
+    exits: Dict[str, str] = Field(default_factory=dict)  # direction -> room_id
+
+    # Additional properties can be added as needed
 
     def describe(self) -> str:
         """Get a full description of the room."""
         exit_list = ", ".join(self.exits.keys()) if self.exits else "none"
-        return f"{self.description.title}\n\n{self.description.long_description}\n\nExits: {exit_list}"
+        return f"{self.title}\n\n{self.long_description}\n\nExits: {exit_list}"
 
-    def __str__(self) -> str:
-        return self.description.title
-
-    def __repr__(self) -> str:
-        return f"Room(id='{self.id}', title='{self.description.title}')"
+    def brief_describe(self) -> str:
+        """Get a brief description of the room."""
+        exit_list = ", ".join(self.exits.keys()) if self.exits else "none"
+        return f"{self.title}\n\n{self.brief_description}\n\nExits: {exit_list}"

@@ -12,6 +12,9 @@ async def handle_input(websocket: WebSocketClientProtocol) -> None:
             await websocket.send(message)
         except (EOFError, KeyboardInterrupt):
             break
+        except Exception as e:
+            print(f"Error in input handling: {e}")
+            break
 
 
 async def handle_messages(websocket: WebSocketClientProtocol) -> None:
@@ -21,6 +24,8 @@ async def handle_messages(websocket: WebSocketClientProtocol) -> None:
             print(message)
     except websockets.exceptions.ConnectionClosed:
         pass
+    except Exception as e:
+        print(f"Error in message handling: {e}")
 
 
 async def main(uri: str = "ws://localhost:8765") -> None:
@@ -30,18 +35,26 @@ async def main(uri: str = "ws://localhost:8765") -> None:
             input_task = asyncio.create_task(handle_input(websocket))
             message_task = asyncio.create_task(handle_messages(websocket))
 
-            # Wait for either task to complete
-            done, pending = await asyncio.wait(
-                [input_task, message_task], return_when=asyncio.FIRST_COMPLETED
-            )
+            # Wait for both tasks to complete or until an exception occurs
+            try:
+                # Using FIRST_EXCEPTION to ensure we detect errors quickly
+                done, pending = await asyncio.wait(
+                    [input_task, message_task], return_when=asyncio.FIRST_EXCEPTION
+                )
 
-            # Cancel remaining tasks
-            for task in pending:
-                task.cancel()
-                try:
-                    await task
-                except asyncio.CancelledError:
-                    pass
+                # Check for exceptions
+                for task in done:
+                    if task.exception():
+                        # Re-raise the exception so it can be handled
+                        task.result()
+            finally:
+                # Cancel remaining tasks
+                for task in pending:
+                    task.cancel()
+                    try:
+                        await task
+                    except asyncio.CancelledError:
+                        pass
     except websockets.exceptions.ConnectionClosed:
         print("\nDisconnected from server")
     except KeyboardInterrupt:

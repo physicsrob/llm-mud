@@ -12,6 +12,7 @@ dependencies = [
     "websockets>=15.0",
     "click>=8.1.0",
     "pydantic-ai==0.0.24",
+    "networkx>=3.2.1",
 ]
 
 [project.scripts]

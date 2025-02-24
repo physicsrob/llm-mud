@@ -1,19 +1,21 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from pydantic_ai import Agent
 from pydantic_ai.models.openai import OpenAIModel
 
+from llm_mud.gen.data_model import Edge, RoomDescription, WorldDescription
+
 from ..config import creative_model, OPENROUTER_BASE_URL, OPENROUTER_API_KEY
-from ..core.room import RoomDescription
-from ..core.world import WorldDescription
 
 prompt = """
-You are a master environment designer for an immersive text adventure. Create a captivating room that players will remember exploring.
+You are a master environment designer for an immersive text adventure.
+Create a captivating room that players will remember exploring.
 
-Given the world description and theme, design a room with:
+You will be given the world description, a theme, a room ID, and a room title, and exit connections.
 
-1. An evocative, specific title that suggests its function or atmosphere
-2. A striking first impression (2-3 sentences) that immediately establishes mood and key visual elements
-3. A layered, detailed description that:
+For the specified room, design a room with:
+
+1. A striking first impression (2-3 sentences) that immediately establishes mood and key visual elements
+2. A layered, detailed description that:
    - Engages multiple senses (what players see, hear, smell, feel)
    - Uses concrete, specific details rather than generalizations
    - Emphasizes one dominant mood or emotion
@@ -29,11 +31,6 @@ The room should:
 - Suggest possible interactions beyond simple observation
 - Have its own micro-history within the larger setting
 
-Technical considerations:
-- Clear indication of exits/connections to other areas
-- At least one distinctive object that could be examined further
-- Variation in scale and composition (high/low elements, light/shadow)
-- Environmental factors that might affect gameplay (sounds that mask movement, scents that reveal hidden aspects)
 
 Avoid:
 - Generic descriptors like "beautiful," "amazing," or "interesting"
@@ -44,13 +41,14 @@ Avoid:
 Write as if you're crafting a space that will intrigue players and make them think: "I wonder what would happen if I..."
 """
 
+
 model = OpenAIModel(
     creative_model,
     base_url=OPENROUTER_BASE_URL,
     api_key=OPENROUTER_API_KEY,
 )
 
-room_gen_agent = Agent(
+describe_room_agent = Agent(
     model=model,
     result_type=RoomDescription,
     retries=2,
@@ -60,50 +58,34 @@ room_gen_agent = Agent(
     },
 )
 
-async def generate_starting_room(world: WorldDescription) -> RoomDescription:
+
+async def describe_room(
+    world: WorldDescription, edges: list[Edge], room_id: str
+) -> RoomDescription:
     """Generate a room description that fits within the given world.
-    
+
     Args:
         world: The WorldDescription containing context about the game world
-        
+
     Returns:
         RoomDescription containing the generated room details
     """
-    
-    user_prompt = f"""
-    This is the starting room for the owrld.
-    When a user first logs in to this world, they will be in this room.
-    This room should be a good representation of the world and its theme.
 
+    room_exits = [e for e in edges if e.source_id == room_id] + [
+        e.get_reverse_edge() for e in edges if e.destination_id == room_id
+    ]
+    room_title = next(e.source_title for e in room_exits if e.source_id == room_id)
+    user_prompt = f"""
     Generate a new room description that fits in this world.
     World Title: {world.title}
     World Description: {world.long_description}
     Other World Details: {world.other_details}
+    Room ID: {room_id}
+    Room Title: {room_title}
+    Room Exits: {room_exits}
     """
-        
-    result = await room_gen_agent.run(
+
+    result = await describe_room_agent.run(
         user_prompt,
     )
     return result.data
-
-
-async def generate_room(world: WorldDescription) -> RoomDescription:
-    """Generate a room description that fits within the given world.
-    
-    Args:
-        world: The WorldDescription containing context about the game world
-        
-    Returns:
-        RoomDescription containing the generated room details
-    """
-    
-    user_prompt = f"""
-    Generate a new room description that fits in this world.
-    World Title: {world.title}
-    World Description: {world.long_description}
-    """
-        
-    result = await room_gen_agent.run(
-        user_prompt,
-    )
-    return result.data 

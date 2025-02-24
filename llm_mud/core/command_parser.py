@@ -29,6 +29,7 @@ Follow these instructions precisely.
 
 class ParseResult(BaseModel):
     """Result of parsing a player's command input"""
+
     action: CharacterAction | None = Field(
         default=None, description="The parsed player action if command was valid"
     )
@@ -65,7 +66,7 @@ command_parser_agent = Agent(
 async def system_prompt(ctx: RunContext[Deps]) -> str:
     world, player = ctx.deps.world, ctx.deps.player
 
-    room = player.get_current_room()
+    room = world.get_character_room(player.id)
 
     return f"""The following exits are available: {", ".join(room.exits.keys())}\n"""
 
@@ -81,7 +82,7 @@ async def parse(world: "World", player: "Player", command_input: str) -> ParseRe
     Returns:
         ParseResult containing either a PlayerAction or error message
     """
-    room = player.get_current_room()
+    room = world.get_character_room(player.id)
     if command_input in room.exits:
         return ParseResult(
             action=CharacterAction(action_type="move", direction=command_input)

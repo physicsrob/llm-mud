@@ -1,18 +1,15 @@
-from .room import Room
-import uuid
+from pydantic import BaseModel
 
 
-class Character:
+class Character(BaseModel):
     """Base class for all characters in the game."""
 
-    def __init__(self, name: str, world: "World"):
-        self.name = name
-        self.id = str(uuid.uuid4())
-        self.world: "World" = world
+    id: str
+    name: str
 
     async def tick(self) -> None:
         pass
 
-    def get_current_room(self) -> Room:
-        """Get the current room the character is in."""
-        return self.world.get_character_room(self.id)
+    class Config:
+        # Allow arbitrary types like Queue
+        arbitrary_types_allowed = True

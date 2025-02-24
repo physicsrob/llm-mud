@@ -1,57 +1,40 @@
 import asyncio
-from collections import defaultdict
-from typing import Optional
-from dataclasses import dataclass
 from pydantic import BaseModel, Field
+from pathlib import Path
+from collections import defaultdict
 
-from .character import Character
-from .player import Player
-from .room import Room, RoomDescription
-from .character_action import CharacterAction
+from llm_mud.core.character import Character
+from llm_mud.core.character_action import CharacterAction
+from llm_mud.core.player import Player
+from llm_mud.core.room import Room
 
-class WorldDescription(BaseModel):
-    title: str = Field(
-        description="The title of the game world"
-    )
-    brief_description: str = Field(
-        description="A short one pargraph description of the world shown everytime you log in"
-    )
-    long_description: str = Field(
-        description="A detailed description of the world shown when examining it"
-    )
-    other_details: str = Field(
-        description="Other details about the world that are not directly observable by the player"
-    )
 
-class World:
+class World(BaseModel):
     """
-    Central game world manager responsible for game state and logic.
-    Provides factory methods for world construction and APIs for state modification.
+    Game world containing rooms, characters, and game state.
     """
 
-    def __init__(self, description: WorldDescription):
-        self.description = description
-        self.rooms: dict[str, Room] = {}
-        self.characters: dict[str, Character] = {}
-        self.room_characters: dict[str, list[Character]] = defaultdict(list)
-        self.starting_room_id: Optional[str] = None
+    # Identity and description
+    title: str
+    brief_description: str
+    long_description: str
+    other_details: str = ""
 
-    # Factory methods for world construction
-    def create_room(self, room_id: str, description: RoomDescription) -> Room:
-        """Create and register a new room in the world."""
-        if room_id in self.rooms:
-            raise ValueError(f"Room with id '{room_id}' already exists")
-        
-        room = Room(room_id, description)
-        self.rooms[room_id] = room
-        return room
+    # Content
+    rooms: dict[str, Room] = Field(default_factory=dict)
+    starting_room_id: str | None = None
 
-    def connect_rooms(self, from_id: str, to_id: str, direction: str) -> None:
-        """Create a one-way connection between rooms."""
-        if from_id not in self.rooms or to_id not in self.rooms:
-            raise ValueError("Both rooms must exist")
-            
-        self.rooms[from_id].add_exit(direction, self.rooms[to_id])
+    # Runtime state
+    room_characters: dict[str, list[str]] = Field(
+        default_factory=lambda: {}
+    )  # room_id -> [character_ids]
+    characters: dict[str, Character] = Field(
+        default_factory=dict
+    )  # character_id -> Character object
+
+    def create_room(self, room: Room) -> None:
+        """Add a room to the world."""
+        self.rooms[room.id] = room
 
     def set_starting_room(self, room_id: str) -> None:
         """Set the starting room for new players."""
@@ -59,53 +42,79 @@ class World:
             raise ValueError(f"Room '{room_id}' does not exist")
         self.starting_room_id = room_id
 
+    def get_character_room(self, character_id: str) -> Room | None:
+        """Get the room a character is currently in."""
+        for room_id, characters in self.room_characters.items():
+            if character_id in characters:
+                return self.rooms.get(room_id)
+        return None
+
+    def move_character(self, character_id: str, direction: str) -> Room | None:
+        """Move a character in a direction if possible."""
+        current_room = self.get_character_room(character_id)
+        if not current_room:
+            return None
+
+        # Get the ID of the destination room
+        destination_id = current_room.exits.get(direction)
+        if not destination_id:
+            return None
+
+        # Get the destination room
+        destination_room = self.rooms.get(destination_id)
+
+        if not destination_room:
+            return None
+
+        # Move the character
+        if not current_room.id in self.room_characters:
+            self.room_characters[current_room.id] = []
+        if not destination_room.id in self.room_characters:
+            self.room_characters[destination_room.id] = []
+
+        if character_id in self.room_characters[current_room.id]:
+            self.room_characters[current_room.id].remove(character_id)
+        self.room_characters[destination_room.id].append(character_id)
+
+        return destination_room
+
     # Character management
     def login_player(self, player_name: str) -> Player:
         """Create and place a new player in the starting room."""
         if not self.starting_room_id:
             raise RuntimeError("No starting room set")
-            
-        player = Player(player_name, self)
+
+        player = Player(player_name)
+
+        # Add player to starting room
+        if not self.starting_room_id in self.room_characters:
+            self.room_characters[self.starting_room_id] = []
+        self.room_characters[self.starting_room_id].append(player.id)
+
+        # Add player to the characters dictionary
         self.characters[player.id] = player
-        self.room_characters[self.starting_room_id].append(player)
+
         return player
 
     def logout_player(self, player: Player) -> None:
         """Remove a player from the world."""
+        # Remove from room
         room = self.get_character_room(player.id)
-        if room:
-            self.room_characters[room.id].remove(player)
-        self.characters.pop(player.id)
+        if room and player.id in self.room_characters[room.id]:
+            self.room_characters[room.id].remove(player.id)
 
-    def get_character_room(self, character_id: str) -> Room | None:
-        """Get the room a character is currently in."""
-        character = self.characters[character_id]
-        for room_id, characters in self.room_characters.items():
-            if character in characters:
-                return self.rooms[room_id]
-        return None
-
-    def move_character(self, character_id: str, direction: str) -> Room | None:
-        """Move a character in a direction if possible."""
-        character = self.characters[character_id]
-        current_room = self.get_character_room(character_id)
-        if not current_room:
-            return None
-            
-        target_room = current_room.get_exit(direction)
-        if not target_room:
-            return None
-            
-        self.room_characters[current_room.id].remove(character)
-        self.room_characters[target_room.id].append(character)
-        return target_room
+        # Remove from characters dictionary
+        if player.id in self.characters:
+            del self.characters[player.id]
 
     # Game loop and action processing
     async def tick(self) -> None:
         """Process one game tick for all characters."""
-        await asyncio.gather(
-            *(character.tick() for character in self.characters.values())
-        )
+        # Only tick actual character objects from our characters dict
+        if self.characters:
+            await asyncio.gather(
+                *(character.tick() for character in self.characters.values())
+            )
 
     async def process_character_action(
         self, character: Character, action: CharacterAction
@@ -116,19 +125,26 @@ class World:
             if room is None:
                 await character.send_message("error", "You can't go that way.")
             else:
-                await character.send_message("room", room.describe())
+                await character.send_message("room", room.brief_describe())
         elif action.action_type == "look":
             room = self.get_character_room(character.id)
             if room:
                 await character.send_message("room", room.describe())
 
-    def create_npc(self, npc_id: str, name: str, room_id: str, attributes: dict[str, any] = {}) -> Character:
-        """Create and register a new NPC in the world."""
-        if npc_id in self.characters:
-            raise ValueError(f"Character with id '{npc_id}' already exists")
-        
-        # Note: You'll need to create an NPC class that inherits from Character
-        npc = NPC(npc_id, name, self, attributes)
-        self.characters[npc_id] = npc
-        self.room_characters[room_id].append(npc)
-        return npc
+    # Persistence
+    def save(self, filepath: str | Path) -> None:
+        """Save world state to a JSON file"""
+        Path(filepath).write_text(self.model_dump_json(indent=2))
+
+    @classmethod
+    def load(cls, filepath: str | Path) -> "World":
+        """
+        Load world data from a JSON file and construct a World instance.
+
+        Args:
+            filepath: Path to the JSON world file
+
+        Returns:
+            A fully constructed World instance
+        """
+        return cls.model_validate_json(Path(filepath).read_text())
