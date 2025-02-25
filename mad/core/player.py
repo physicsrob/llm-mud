@@ -1,6 +1,6 @@
 from .character import Character
 from asyncio import Queue
-from ..networking.messages import MessageToPlayer, MessageToPlayerType
+from ..networking.messages import MessageToCharacter, MessageToCharacterType
 from .command_parser import parse
 from .character_action import CharacterAction
 
@@ -10,7 +10,7 @@ class Player(Character):
 
     def __init__(self, name: str):
         super().__init__(name=name, id=name)
-        self._queue: Queue[MessageToPlayer] = Queue()
+        self._queue: Queue[MessageToCharacter] = Queue()
 
     def __aiter__(self):
         """Return self as an async iterator."""
@@ -27,30 +27,22 @@ class Player(Character):
         # the async iterator unless the queue is closed elsewhere
         return await self._queue.get()
 
-    async def send_message(
-        self,
-        msg_type: MessageToPlayerType,
-        message: str,
-        msg_src: str | None = None,
-        scroll: bool = False,
-    ) -> None:
-        """Send a message to the player."""
-        await self._queue.put(
-            MessageToPlayer(
-                msg_type=msg_type, message=message, msg_src=msg_src, scroll=scroll
-            )
-        )
+    async def send_message(self, msg: MessageToCharacter) -> None:
+        """Send a message to the player by adding it to the message queue."""
+        await self._queue.put(msg)
 
     async def process_command(self, world: "World", command: str) -> None:
         """Process a command from the player."""
         parse_result = await parse(world, self, command)
         if parse_result.error_msg:
-            await self.send_message("error", parse_result.error_msg)
+            await self.send_message(
+                MessageToCharacter(msg_type="error", message=parse_result.error_msg)
+            )
             return
 
         action = parse_result.action
         await world.process_character_action(self, action)
 
     async def tick(self) -> None:
-        # await self.send_message("server", "Tick")
+        # Message creation moved out of this method
         pass

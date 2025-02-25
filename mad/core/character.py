@@ -1,4 +1,5 @@
 from pydantic import BaseModel
+from ..networking.messages import MessageToCharacter
 
 
 class Character(BaseModel):
@@ -8,6 +9,15 @@ class Character(BaseModel):
     name: str
 
     async def tick(self) -> None:
+        pass
+        
+    async def send_message(self, msg: MessageToCharacter) -> None:
+        """
+        Send a message to the character.
+        
+        Default implementation does nothing. Subclasses should override
+        this method to implement their own message handling.
+        """
         pass
 
     class Config:

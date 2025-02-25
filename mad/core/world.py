@@ -7,7 +7,7 @@ from mad.core.character import Character
 from mad.core.character_action import CharacterAction
 from mad.core.player import Player
 from mad.core.room import Room
-from mad.networking.messages import MessageToPlayerType
+from mad.networking.messages import MessageToCharacter, MessageToCharacterType
 
 
 class World(BaseModel):
@@ -124,14 +124,20 @@ class World(BaseModel):
         if action.action_type == "move":
             room = self.move_character(character.id, action.direction)
             if room is None:
-                await character.send_message("error", "You can't go that way.")
+                await character.send_message(
+                    MessageToCharacter(msg_type="error", message="You can't go that way.")
+                )
             else:
-                await character.send_message("room", room.brief_describe())
+                await character.send_message(
+                    MessageToCharacter(msg_type="room", message=room.brief_describe())
+                )
         elif action.action_type == "look":
             room = self.get_character_room(character.id)
             if room:
                 # Set scroll to true for room descriptions
-                await character.send_message("room", room.describe(), scroll=True)
+                await character.send_message(
+                    MessageToCharacter(msg_type="room", message=room.describe(), scroll=True)
+                )
         elif action.action_type in ("say", "emote") and action.message:
             room = self.get_character_room(character.id)
             if room:
@@ -145,7 +151,7 @@ class World(BaseModel):
     async def broadcast_to_room(
         self, 
         room_id: str, 
-        msg_type: MessageToPlayerType,
+        msg_type: MessageToCharacterType,
         message: str, 
         msg_src: str | None = None,
         exclude_character_id: str | None = None
@@ -169,7 +175,13 @@ class World(BaseModel):
             character = self.characters.get(character_id)
             if character:
                 try:
-                    await character.send_message(msg_type, message, msg_src=msg_src)
+                    await character.send_message(
+                        MessageToCharacter(
+                            msg_type=msg_type,
+                            message=message,
+                            msg_src=msg_src
+                        )
+                    )
                 except Exception:
                     pass
     

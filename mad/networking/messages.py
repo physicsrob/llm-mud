@@ -10,15 +10,15 @@ YELLOW = "\033[93m"
 CYAN = "\033[96m"
 RESET = "\033[0m"
 
-MessageToPlayerType = Literal["server", "room", "error", "say", "emote"]
+MessageToCharacterType = Literal["server", "room", "error", "say", "emote"]
 
 
-class MessageToPlayer(BaseModel):
+class MessageToCharacter(BaseModel):
     """
-    A message to the player. Typically for display purposes.
+    A message to a character. Typically for display purposes.
     """
 
-    msg_type: MessageToPlayerType
+    msg_type: MessageToCharacterType
     message: str
     msg_src: str | None = Field(
         description="The player or character who sent the message, otherwise None.",

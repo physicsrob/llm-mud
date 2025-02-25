@@ -14,6 +14,7 @@ from ..core.command_parser import parse
 from ..db_models.users import User
 from ..db_models.db import init_db, get_session
 from ..db_models.auth import authenticate_user, create_access_token, get_user_by_token
+from ..networking.messages import MessageToCharacter
 
 
 class Server:
@@ -200,13 +201,23 @@ class Server:
             )
             # Use the scroll flag for this important message
             await player.send_message(
-                "server", welcome_message, msg_src=None, scroll=True
+                MessageToCharacter(
+                    msg_type="server", 
+                    message=welcome_message, 
+                    msg_src=None, 
+                    scroll=True
+                )
             )
 
             # Show current room
             current_room = self.world.get_character_room(player.id)
             if current_room:
-                await player.send_message("room", current_room.brief_describe())
+                await player.send_message(
+                    MessageToCharacter(
+                        msg_type="room", 
+                        message=current_room.brief_describe()
+                    )
+                )
 
             # Handle incoming messages
             async for msg in ws:
@@ -259,7 +270,9 @@ class Server:
         """Send a text message to all connected clients."""
         for player, _ in self.clients:
             try:
-                await player.send_message("server", message)
+                await player.send_message(
+                    MessageToCharacter(msg_type="server", message=message)
+                )
             except Exception:
                 pass
 
