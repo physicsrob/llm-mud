@@ -50,7 +50,7 @@ class World(BaseModel):
                 return self.rooms.get(room_id)
         return None
 
-    def move_character(self, character_id: str, direction: str) -> Room | None:
+    async def move_character(self, character_id: str, direction: str) -> Room | None:
         """Move a character in a direction if possible."""
         current_room = self.get_character_room(character_id)
         if not current_room:
@@ -73,14 +73,36 @@ class World(BaseModel):
         if not destination_room.id in self.room_characters:
             self.room_characters[destination_room.id] = []
 
+        # Get character name for emote messages
+        character_name = self.characters.get(character_id).name if character_id in self.characters else "Someone"
+
         if character_id in self.room_characters[current_room.id]:
+            # Broadcast departure message to current room before removing character
+            await self.broadcast_to_room(
+                current_room.id, 
+                "emote", 
+                "leaves.", 
+                msg_src=character_name,
+                exclude_character_id=character_id
+            )
             self.room_characters[current_room.id].remove(character_id)
+            
+        # Add character to destination room
         self.room_characters[destination_room.id].append(character_id)
+        
+        # Broadcast arrival message to destination room
+        await self.broadcast_to_room(
+            destination_room.id, 
+            "emote", 
+            "arrives.", 
+            msg_src=character_name,
+            exclude_character_id=character_id
+        )
 
         return destination_room
 
     # Character management
-    def login_player(self, player_name: str) -> Player:
+    async def login_player(self, player_name: str) -> Player:
         """Create and place a new player in the starting room."""
         if not self.starting_room_id:
             raise RuntimeError("No starting room set")
@@ -94,14 +116,30 @@ class World(BaseModel):
 
         # Add player to the characters dictionary
         self.characters[player.id] = player
+        
+        # Broadcast arrival message to starting room
+        await self.broadcast_to_room(
+            self.starting_room_id, 
+            "emote", 
+            "arrives.", 
+            msg_src=player.name,
+            exclude_character_id=player.id
+        )
 
         return player
 
-    def logout_player(self, player: Player) -> None:
+    async def logout_player(self, player: Player) -> None:
         """Remove a player from the world."""
-        # Remove from room
+        # Broadcast departure message before removing
         room = self.get_character_room(player.id)
         if room and player.id in self.room_characters[room.id]:
+            await self.broadcast_to_room(
+                room.id, 
+                "emote", 
+                "leaves.", 
+                msg_src=player.name,
+                exclude_character_id=player.id
+            )
             self.room_characters[room.id].remove(player.id)
 
         # Remove from characters dictionary
@@ -122,7 +160,7 @@ class World(BaseModel):
     ) -> None:
         """Process a character's action."""
         if action.action_type == "move":
-            room = self.move_character(character.id, action.direction)
+            room = await self.move_character(character.id, action.direction)
             if room is None:
                 await character.send_message(
                     MessageToCharacter(

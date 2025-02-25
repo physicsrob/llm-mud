@@ -182,7 +182,7 @@ class Server:
             raise ValueError("Invalid authentication token")
 
         # Create player with authenticated username
-        return self.world.login_player(user.username)
+        return await self.world.login_player(user.username)
 
     async def websocket_handler(self, request):
         """Handle WebSocket connections."""
@@ -246,7 +246,7 @@ class Server:
                     break
 
             if player_to_remove:
-                self.world.logout_player(player_to_remove)
+                await self.world.logout_player(player_to_remove)
                 self.clients = [(p, w) for p, w in self.clients if w != ws]
 
         return ws
