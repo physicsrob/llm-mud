@@ -317,44 +317,42 @@ document.addEventListener('DOMContentLoaded', () => {
         let messageQueue = [];
         let processingMessages = false;
         
-        // Function to handle typewriter effect (word by word)
+        // Function to handle typewriter effect with word-by-word animation
         async function typeWriter(text) {
-            const TYPING_SPEED = 10; // ms per word
+            // Set typing speed (milliseconds per word)
+            const TYPING_SPEED = 20;
             
-            // Split by lines and type each word with delay
+            // Check if text is empty
+            if (!text || text.length === 0) return;
+            
+            // Split text into lines
             const lines = text.split('\n');
+            
+            // Process each line
             for (let i = 0; i < lines.length; i++) {
-                const line = lines[i];
+                // Don't add extra linebreak for first line (we handle that elsewhere)
+                if (i > 0) {
+                    term.write('\r\n');
+                }
                 
-                // Move to start of line
-                term.write('\r');
+                // Skip empty lines
+                if (lines[i].length === 0) continue;
                 
-                // Split line into words and type each word with delay
-                const words = line.split(/(\s+)/); // Split by whitespace but keep the separators
-                let currentPosition = 0;
+                // Split line into words
+                const words = lines[i].split(' ');
                 
+                // Write words with delays
                 for (let j = 0; j < words.length; j++) {
-                    const word = words[j];
-                    // Check if this word will exceed terminal width
-                    if (currentPosition + word.length >= term.cols && currentPosition > 0 && !/^\s+$/.test(word)) {
-                        // Insert a line break before this word
-                        term.write('\r\n');
-                        currentPosition = 0;
+                    // Add space before words (except first word)
+                    if (j > 0) {
+                        term.write(' ');
                     }
                     
                     // Write the word
-                    term.write(word);
-                    currentPosition += word.length;
+                    term.write(words[j]);
                     
-                    // Add delay after each word (but not after whitespace)
-                    if (!/^\s+$/.test(word)) {
-                        await new Promise(resolve => setTimeout(resolve, TYPING_SPEED));
-                    }
-                }
-                
-                // Add newline between lines (except for the last line)
-                if (i < lines.length - 1) {
-                    term.write('\r\n');
+                    // Add delay between words
+                    await new Promise(resolve => setTimeout(resolve, TYPING_SPEED));
                 }
             }
         }
@@ -376,8 +374,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 term.options.cursorStyle = 'underline';
                 term.options.cursorBlink = false;
                 
-                // Start on a fresh line with space for message
-                term.write('\r\n');
                 
                 // Check if we should apply scrolling effect for this message
                 if (typeof message === 'object' && message.scroll) {
@@ -395,9 +391,48 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
                 
                 // Use typewriter effect for the message text
-                // If message is an object (JSON format), use the formatted message text
+                // If message is an object (JSON format), handle title and message separately
                 if (typeof message === 'object') {
-                    await typeWriter(formatMessage(message));
+                    const { message: msgText, title, title_color, message_color, msg_src } = message;
+                    
+                    // ANSI color codes
+                    const BOLD = "\x1b[1m";
+                    const RESET = "\x1b[0m";
+                    
+                    // Handle title if provided
+                    if (title) {
+                        // Apply title color if provided
+
+                        const titleColorCode = title_color ? colorToAnsi(title_color) : '';
+                        
+                        // Apply formatting codes directly
+                        term.write('\r\n');
+                        term.write(`${BOLD}${titleColorCode}${title}${RESET}`);
+                        term.write('\r\n');
+
+                    } else if (msg_src) {
+                        // If no title but there is a source, add the source as a prefix
+                        term.write('\r\n');
+                        term.write(`${BOLD}`);
+                        await typeWriter(msg_src);
+                        term.write(`${RESET}: `);
+                    }
+                    await new Promise(resolve => setTimeout(resolve, 1));
+                    
+                    // Handle message with optional color
+                    const messageColorCode = message_color ? colorToAnsi(message_color) : '';
+                    if (messageColorCode) {
+                        term.write(messageColorCode);
+                    }
+                    
+                    // Use typewriter for message text
+                    await typeWriter(msgText);
+                    
+                    // Reset formatting
+                    if (messageColorCode) {
+                        term.write(RESET);
+                        await new Promise(resolve => setTimeout(resolve, 1));
+                    }
                 } else {
                     await typeWriter(message);
                 }
@@ -436,49 +471,41 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         };
         
-        // Format message based on its type
-        function formatMessage(jsonMessage) {
-            const { msg_type, message, msg_src } = jsonMessage;
+        // Convert color string to ANSI code
+        function colorToAnsi(color) {
+            // Handle common color names
+            const colorMap = {
+                'black': "\x1b[30m",
+                'red': "\x1b[31m",
+                'green': "\x1b[32m",
+                'yellow': "\x1b[33m",
+                'blue': "\x1b[94m", // Using bright blue (94) instead of dark blue (34) for better visibility
+                'magenta': "\x1b[35m",
+                'cyan': "\x1b[36m",
+                'white': "\x1b[37m"
+            };
             
-            // ANSI color codes for the terminal
-            const BLUE = "\x1b[34m";
-            const GREEN = "\x1b[32m";
-            const RED = "\x1b[31m";
-            const RESET = "\x1b[0m";
-            
-            // Set color based on message type
-            let colorCode;
-            switch(msg_type) {
-                case 'server':
-                    colorCode = BLUE;
-                    break;
-                case 'room':
-                    colorCode = GREEN;
-                    break;
-                case 'error':
-                    colorCode = RED;
-                    break;
-                default:
-                    colorCode = '';
+            if (color && colorMap[color.toLowerCase()]) {
+                return colorMap[color.toLowerCase()];
             }
             
-            // Create prefix based on message type and source
-            let prefix = `[${msg_type}]`;
-            if (msg_src) {
-                prefix += ` ${msg_src}`;
+            // If it's a hex color, we can't directly convert to ANSI
+            // We'll use approximate matching to basic colors for now
+            if (color && color.startsWith('#')) {
+                // For simplicity, return a default color
+                // In a more advanced implementation, this could map hex to closest ANSI
+                return "\x1b[37m"; // default to white
             }
             
-            // No need to extract world title from welcome message anymore
-            // We now get it from the API
-            
-            return `${colorCode}${prefix}${RESET}: ${message}`;
+            return ''; // Default - no color
         }
     }
     
     // Spinner animation
     let spinnerInterval = null;
     let spinnerTimeout = null;
-    const spinnerFrames = ['●∙∙∙', '∙●∙∙', '∙∙●∙', '∙∙∙●', '∙∙●∙', '∙●∙∙'];
+    //const spinnerFrames = ['●∙∙∙', '∙●∙∙', '∙∙●∙', '∙∙∙●', '∙∙●∙', '∙●∙∙'];
+    const spinnerFrames = ['●∙∙', '∙●∙', '∙∙●', '∙●∙'];
     let spinnerFrame = 0;
     
     function startSpinner() {
@@ -496,7 +523,7 @@ document.addEventListener('DOMContentLoaded', () => {
         spinnerInterval = setInterval(() => {
             spinnerFrame = (spinnerFrame + 1) % spinnerFrames.length;
             // Move cursor back 4 characters and write the next frame with same color
-            term.write('\b\b\b\b\x1b[36m' + spinnerFrames[spinnerFrame] + '\x1b[0m');
+            term.write('\b\b\b\b\x1b[36m' + spinnerFrames[spinnerFrame]    + '\x1b[0m');
         }, 150); // Animation speed - adjust as needed
         
         // Set a timeout to stop the spinner after 30 seconds if no response

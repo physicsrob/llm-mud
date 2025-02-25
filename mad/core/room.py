@@ -26,9 +26,9 @@ class Room(BaseModel):
     def describe(self) -> str:
         """Get a full description of the room."""
         exit_list = ", ".join(self.exits.keys()) if self.exits else "none"
-        return f"{self.title}\n\n{self.long_description}\n\nExits: {exit_list}"
+        return f"{self.long_description}\n\nExits: {exit_list}"
 
     def brief_describe(self) -> str:
         """Get a brief description of the room."""
         exit_list = ", ".join(self.exits.keys()) if self.exits else "none"
-        return f"{self.title}\n\n{self.brief_description}\n\nExits: {exit_list}"
+        return f"{self.brief_description}\n\nExits: {exit_list}"

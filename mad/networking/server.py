@@ -172,8 +172,10 @@ class Server:
         if user is None:
             await ws.send_json(
                 {
-                    "msg_type": "error",
                     "message": "Invalid or expired token. Please log in via the web interface.",
+                    "title": "Error",
+                    "title_color": "red",
+                    "message_color": "red",
                     "msg_src": None,
                 }
             )
@@ -194,18 +196,16 @@ class Server:
 
             # Set up player output task
             output_task = asyncio.create_task(self._handle_client_output(player, ws))
-
+            
             # Welcome message with world info
-            welcome_message = (
-                f"Welcome to {self.world.title}!\n\n{self.world.brief_description}"
-            )
+            welcome_message = f"Welcome to {self.world.title}!"
             # Use the scroll flag for this important message
             await player.send_message(
                 MessageToCharacter(
-                    msg_type="server", 
-                    message=welcome_message, 
-                    msg_src=None, 
-                    scroll=True
+                    title=welcome_message,
+                    title_color="blue",
+                    message=self.world.brief_description,
+                    scroll=False
                 )
             )
 
@@ -214,7 +214,8 @@ class Server:
             if current_room:
                 await player.send_message(
                     MessageToCharacter(
-                        msg_type="room", 
+                        title=current_room.title,
+                        title_color="green",
                         message=current_room.brief_describe()
                     )
                 )
@@ -247,7 +248,6 @@ class Server:
             if player_to_remove:
                 self.world.logout_player(player_to_remove)
                 self.clients = [(p, w) for p, w in self.clients if w != ws]
-                await self.broadcast(f"{player_to_remove.name} left the server")
 
         return ws
 
@@ -266,15 +266,6 @@ class Server:
             print(f"Error handling client output for {player.name}: {e}")
             print(f"Traceback: {traceback.format_exc()}")
 
-    async def broadcast(self, message: str) -> None:
-        """Send a text message to all connected clients."""
-        for player, _ in self.clients:
-            try:
-                await player.send_message(
-                    MessageToCharacter(msg_type="server", message=message)
-                )
-            except Exception:
-                pass
 
     async def run_world_ticker(self) -> None:
         """Run the world simulation ticker."""

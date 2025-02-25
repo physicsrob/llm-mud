@@ -7,7 +7,7 @@ from mad.core.character import Character
 from mad.core.character_action import CharacterAction
 from mad.core.player import Player
 from mad.core.room import Room
-from mad.networking.messages import MessageToCharacter, MessageToCharacterType
+from mad.networking.messages import MessageToCharacter
 
 
 class World(BaseModel):
@@ -125,18 +125,32 @@ class World(BaseModel):
             room = self.move_character(character.id, action.direction)
             if room is None:
                 await character.send_message(
-                    MessageToCharacter(msg_type="error", message="You can't go that way.")
+                    MessageToCharacter(
+                        title="Error",
+                        title_color="red",
+                        message="You can't go that way.",
+                        message_color="red"
+                    )
                 )
             else:
                 await character.send_message(
-                    MessageToCharacter(msg_type="room", message=room.brief_describe())
+                    MessageToCharacter(
+                        title=room.title,
+                        title_color="green",
+                        message=room.brief_describe()
+                    )
                 )
         elif action.action_type == "look":
             room = self.get_character_room(character.id)
             if room:
                 # Set scroll to true for room descriptions
                 await character.send_message(
-                    MessageToCharacter(msg_type="room", message=room.describe(), scroll=True)
+                    MessageToCharacter(
+                        title=room.title,
+                        title_color="green",
+                        message=room.describe(),
+                        scroll=True
+                    )
                 )
         elif action.action_type in ("say", "emote") and action.message:
             room = self.get_character_room(character.id)
@@ -151,7 +165,7 @@ class World(BaseModel):
     async def broadcast_to_room(
         self, 
         room_id: str, 
-        msg_type: MessageToCharacterType,
+        action_type: str,  # "say" or "emote"
         message: str, 
         msg_src: str | None = None,
         exclude_character_id: str | None = None
@@ -160,7 +174,7 @@ class World(BaseModel):
         
         Args:
             room_id: The ID of the room to broadcast to
-            msg_type: The type of message (say, emote, etc.)
+            action_type: The type of action ("say" or "emote")
             message: The message content
             msg_src: The source of the message (character name)
             exclude_character_id: Optional character ID to exclude from broadcast
@@ -173,13 +187,23 @@ class World(BaseModel):
                 continue
                 
             character = self.characters.get(character_id)
-            if character:
+            if character and msg_src:
                 try:
+                    formatted_message = ""
+                    message_color = None
+                    
+                    # Format based on action type
+                    if action_type == "say":
+                        formatted_message = f"{msg_src} says: {message}"
+                        message_color = "cyan"
+                    elif action_type == "emote":
+                        formatted_message = f"{msg_src} {message}"
+                        message_color = "magenta"
+                    
                     await character.send_message(
                         MessageToCharacter(
-                            msg_type=msg_type,
-                            message=message,
-                            msg_src=msg_src
+                            message=formatted_message,
+                            message_color=message_color
                         )
                     )
                 except Exception:

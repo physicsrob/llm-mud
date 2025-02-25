@@ -1,6 +1,6 @@
 from .character import Character
 from asyncio import Queue
-from ..networking.messages import MessageToCharacter, MessageToCharacterType
+from ..networking.messages import MessageToCharacter
 from .command_parser import parse
 from .character_action import CharacterAction
 
@@ -36,7 +36,12 @@ class Player(Character):
         parse_result = await parse(world, self, command)
         if parse_result.error_msg:
             await self.send_message(
-                MessageToCharacter(msg_type="error", message=parse_result.error_msg)
+                MessageToCharacter(
+                    title="Error",
+                    title_color="red",
+                    message=parse_result.error_msg,
+                    message_color="red"
+                )
             )
             return
 
