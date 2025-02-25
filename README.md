@@ -28,20 +28,14 @@ pip install -e .
 
 ## Usage
 
-You can run the game in different modes:
+Run the game server:
 
 ```bash
-# Start in development mode (single player)
-llmmud dev world1.json
-
 # Start the server (includes web interface)
 llmmud server world1.json
 
 # Start the server without web interface
 llmmud server --backend-only world1.json
-
-# Start a client
-llmmud client
 ```
 
 ## Web Interface
@@ -51,8 +45,6 @@ The server includes a web-based terminal interface powered by xterm.js. To acces
 1. Start the server: `llmmud server world1.json`
 2. Open a web browser and navigate to: `http://localhost:8765`
 3. The web interface automatically connects to the WebSocket server
-
-You can play directly in your browser without installing a separate client.
 
 ## Project Structure
 
@@ -68,7 +60,6 @@ The project is organized into several modules:
 
 ### Networking Module
 - `llm_mud/networking/server.py`: Implements the game server and manages client connections
-- `llm_mud/networking/client.py`: Handles client-side networking and game state
 - `llm_mud/networking/messages.py`: Message types for client-server communication
 
 ### Generation Module

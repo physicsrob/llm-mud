@@ -2,9 +2,7 @@
 
 ## Commands
 - Install: `pip install -e .`
-- Run development mode: `llmmud dev`
-- Run server: `llmmud server`
-- Run client: `llmmud client`
+- Run server: `llmmud server <world_file>`
 
 ## Code Style
 - Python >= 3.10 with type hints
