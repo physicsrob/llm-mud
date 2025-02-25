@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LLM-MUD Terminal</title>
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;700&family=Source+Code+Pro:wght@400;700&display=swap" rel="stylesheet">
+    <!-- xterm.js from CDN -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.min.css" />
+    <script src="https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.min.js"></script>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>LLM-MUD</h1>
+        </header>
+        <main>
+            <div id="terminal"></div>
+        </main>
+        <footer>
+            <div class="footer-controls">
+                <div>
+                    <label for="font-size">Font Size:</label>
+                    <select id="font-size">
+                        <option value="14">Small</option>
+                        <option value="16" selected>Medium</option>
+                        <option value="18">Large</option>
+                        <option value="22">Extra Large</option>
+                    </select>
+                </div>
+                <div>
+                    <label for="font-family">Font:</label>
+                    <select id="font-family">
+                        <option value="'Courier New', monospace">Courier New</option>
+                        <option value="monospace">Monospace</option>
+                        <option value="'Fira Code', monospace">Fira Code</option>
+                        <option value="'Source Code Pro', monospace" selected>Source Code Pro</option>
+                    </select>
+                </div>
+                <div>
+                    <label for="theme">Theme:</label>
+                    <select id="theme">
+                        <option value="dark" selected>Dark</option>
+                        <option value="light">Light</option>
+                        <option value="retro">Retro</option>
+                        <option value="matrix">Matrix</option>
+                    </select>
+                </div>
+                <div>
+                    <p>Connected to: <span id="connection-status">Disconnected</span></p>
+                </div>
+            </div>
+        </footer>
+    </div>
+    <script src="main.js"></script>
+</body>
+</html>

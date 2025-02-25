@@ -13,9 +13,14 @@ async def run_client():
     await client_main()
 
 
-async def run_server(world_file: str | Path):
-    """Run the server."""
-    await server_main(world_file)
+async def run_server(world_file: str | Path, backend_only: bool = False):
+    """Run the server.
+    
+    Args:
+        world_file: Path to the world file to load
+        backend_only: If True, don't serve web frontend files
+    """
+    await server_main(world_file, not backend_only)
 
 
 @click.group()
@@ -32,17 +37,27 @@ def client():
 
 @main.command()
 @click.argument("world_file")
-def server(world_file: str):
+@click.option(
+    "--backend-only", 
+    is_flag=True, 
+    help="Run only the backend server without web interface"
+)
+def server(world_file: str, backend_only: bool = False):
     """Start the MUD server.
 
     WORLD_FILE: Path to the world file to load
     """
-    asyncio.run(run_server(world_file))
+    asyncio.run(run_server(world_file, backend_only))
 
 
 @main.command()
 @click.argument("world_file")
-def dev(world_file: str):
+@click.option(
+    "--backend-only", 
+    is_flag=True, 
+    help="Run only the backend server without web interface"
+)
+def dev(world_file: str, backend_only: bool = False):
     """Run both server and client for development.
 
     WORLD_FILE: Path to the world file to load
@@ -50,7 +65,7 @@ def dev(world_file: str):
 
     async def run_dev():
         # Start server task
-        server_task = asyncio.create_task(run_server(world_file))
+        server_task = asyncio.create_task(run_server(world_file, backend_only))
 
         # Wait a bit for server to start
         click.echo("Starting server...")
