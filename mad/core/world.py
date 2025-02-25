@@ -7,6 +7,7 @@ from mad.core.character import Character
 from mad.core.character_action import CharacterAction
 from mad.core.player import Player
 from mad.core.room import Room
+from mad.networking.messages import MessageToPlayerType
 
 
 class World(BaseModel):
@@ -131,7 +132,47 @@ class World(BaseModel):
             if room:
                 # Set scroll to true for room descriptions
                 await character.send_message("room", room.describe(), scroll=True)
+        elif action.action_type in ("say", "emote") and action.message:
+            room = self.get_character_room(character.id)
+            if room:
+                await self.broadcast_to_room(
+                    room.id, 
+                    action.action_type, 
+                    action.message, 
+                    msg_src=character.name
+                )
 
+    async def broadcast_to_room(
+        self, 
+        room_id: str, 
+        msg_type: MessageToPlayerType,
+        message: str, 
+        msg_src: str | None = None,
+        exclude_character_id: str | None = None
+    ) -> None:
+        """Send a message to all characters in a specific room.
+        
+        Args:
+            room_id: The ID of the room to broadcast to
+            msg_type: The type of message (say, emote, etc.)
+            message: The message content
+            msg_src: The source of the message (character name)
+            exclude_character_id: Optional character ID to exclude from broadcast
+        """
+        if room_id not in self.room_characters:
+            return
+            
+        for character_id in self.room_characters[room_id]:
+            if exclude_character_id and character_id == exclude_character_id:
+                continue
+                
+            character = self.characters.get(character_id)
+            if character:
+                try:
+                    await character.send_message(msg_type, message, msg_src=msg_src)
+                except Exception:
+                    pass
+    
     # Persistence
     def save(self, filepath: str | Path) -> None:
         """Save world state to a JSON file"""

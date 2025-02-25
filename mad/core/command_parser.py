@@ -23,7 +23,12 @@ Follow these instructions precisely.
         - return an error message explaining they can't go that way
 2. See if the command is a look command. Only look if explicitly asked, e.g. "look around", or "describe the room", etc.
     If so return an action with type "look"
-3. If none of the above, return an error message with a user friendly explanation
+3. See if the command is a say command (e.g., "say hello", "say I'm looking for treasure", etc.)
+    If so return an action with type "say" and the message (everything after the word "say")
+4. See if the command is an emote command (e.g., "emote smiles", "emote looks around nervously", etc.)
+    Also recognize the shorthand "/me" format (e.g., "/me smiles", "/me looks around nervously")
+    If so return an action with type "emote" and the message (everything after the word "emote" or "/me")
+5. If none of the above, return an error message with a user friendly explanation
 """
 
 
@@ -83,12 +88,37 @@ async def parse(world: "World", player: "Player", command_input: str) -> ParseRe
         ParseResult containing either a PlayerAction or error message
     """
     room = world.get_character_room(player.id)
+    
+    # Direct movement command
     if command_input in room.exits:
         return ParseResult(
             action=CharacterAction(action_type="move", direction=command_input)
         )
+    # Look command shortcuts
     elif command_input in ("l", "look", "describe"):
         return ParseResult(action=CharacterAction(action_type="look"))
+    # Say command
+    elif command_input.startswith("say "):
+        message = command_input[4:].strip()
+        if message:
+            return ParseResult(action=CharacterAction(action_type="say", message=message))
+        else:
+            return ParseResult(error_msg="What do you want to say?")
+    # Emote command
+    elif command_input.startswith("emote "):
+        message = command_input[6:].strip()
+        if message:
+            return ParseResult(action=CharacterAction(action_type="emote", message=message))
+        else:
+            return ParseResult(error_msg="What do you want to emote?")
+    # Alternative emote command with /me
+    elif command_input.startswith("/me "):
+        message = command_input[4:].strip()
+        if message:
+            return ParseResult(action=CharacterAction(action_type="emote", message=message))
+        else:
+            return ParseResult(error_msg="What do you want to emote?")
+    # Use LLM parser for more complex commands
     else:
         result = await command_parser_agent.run(
             command_input, deps=Deps(world=world, player=player)
