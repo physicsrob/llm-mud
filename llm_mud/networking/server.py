@@ -25,47 +25,47 @@ class Server:
         self.runner = None
         self.site = None
         self.world_ticker_task = None
-        
+
         # Set up session
         fernet_key = fernet.Fernet.generate_key()
         secret_key = fernet.Fernet(fernet_key)
         setup_session(self.app, EncryptedCookieStorage(secret_key))
-        
+
         # Initialize database
         init_db()
-        
+
         # Set up routes
         self.setup_routes()
 
     @classmethod
     async def create(cls, world_file: str | Path, serve_web: bool = True) -> "Server":
         """Factory method to create a server with a loaded world.
-        
+
         Args:
             world_file: Path to the world file to load
             serve_web: Whether to serve web frontend files
         """
         world = World.load(world_file)
         return cls(world, serve_web)
-    
+
     def setup_routes(self):
         """Set up the HTTP and WebSocket routes."""
         # API routes
-        self.app.router.add_post('/api/register', self.register_handler)
-        self.app.router.add_post('/api/login', self.login_handler)
-        self.app.router.add_get('/api/world-info', self.world_info_handler)
-        
+        self.app.router.add_post("/api/register", self.register_handler)
+        self.app.router.add_post("/api/login", self.login_handler)
+        self.app.router.add_get("/api/world-info", self.world_info_handler)
+
         # WebSocket endpoint
-        self.app.router.add_get('/ws', self.websocket_handler)
-        
+        self.app.router.add_get("/ws", self.websocket_handler)
+
         if self.serve_web:
             # Get the project root directory
             project_dir = Path(__file__).parent.parent.parent
             web_dir = project_dir / "web"
-            
+
             if web_dir.exists():
                 # Serve static files
-                self.app.router.add_static('/', web_dir, show_index=True)
+                self.app.router.add_static("/", web_dir, show_index=True)
                 print(f"Web directory found at {web_dir}")
             else:
                 print(f"Warning: Web directory not found at {web_dir}")
@@ -74,96 +74,88 @@ class Server:
         """Handle user registration."""
         try:
             data = await request.json()
-            username = data.get('username')
-            password = data.get('password')
-            
+            username = data.get("username")
+            password = data.get("password")
+
             if not username or not password:
                 return web.json_response(
-                    {"success": False, "message": "Username and password required"}, 
-                    status=400
+                    {"success": False, "message": "Username and password required"},
+                    status=400,
                 )
-            
+
             # Check if user already exists
             session = get_session()
             try:
-                existing_user = session.query(User).filter(User.username == username).first()
+                existing_user = (
+                    session.query(User).filter(User.username == username).first()
+                )
                 if existing_user:
                     return web.json_response(
-                        {"success": False, "message": "Username already taken"}, 
-                        status=400
+                        {"success": False, "message": "Username already taken"},
+                        status=400,
                     )
-                
+
                 # Create new user
                 user = User.create(username=username, password=password)
                 session.add(user)
                 session.commit()
-                
+
                 # Create JWT token
                 token = create_access_token({"sub": user.username})
-                
-                return web.json_response({
-                    "success": True,
-                    "token": token,
-                    "username": user.username
-                })
+
+                return web.json_response(
+                    {"success": True, "token": token, "username": user.username}
+                )
             finally:
                 session.close()
         except Exception as e:
             print(f"Error in register handler: {e}")
             return web.json_response(
-                {"success": False, "message": "Server error"}, 
-                status=500
+                {"success": False, "message": "Server error"}, status=500
             )
-    
+
     async def login_handler(self, request):
         """Handle user login."""
         try:
             data = await request.json()
-            username = data.get('username')
-            password = data.get('password')
-            
+            username = data.get("username")
+            password = data.get("password")
+
             if not username or not password:
                 return web.json_response(
-                    {"success": False, "message": "Username and password required"}, 
-                    status=400
+                    {"success": False, "message": "Username and password required"},
+                    status=400,
                 )
-            
+
             # Authenticate user
             user = await authenticate_user(username, password)
             if not user:
                 return web.json_response(
-                    {"success": False, "message": "Invalid username or password"}, 
-                    status=401
+                    {"success": False, "message": "Invalid username or password"},
+                    status=401,
                 )
-            
+
             # Create JWT token
             token = create_access_token({"sub": user.username})
-            
-            return web.json_response({
-                "success": True,
-                "token": token,
-                "username": user.username
-            })
+
+            return web.json_response(
+                {"success": True, "token": token, "username": user.username}
+            )
         except Exception as e:
             print(f"Error in login handler: {e}")
             return web.json_response(
-                {"success": False, "message": "Server error"}, 
-                status=500
+                {"success": False, "message": "Server error"}, status=500
             )
-            
+
     async def world_info_handler(self, request):
         """Handle world info requests."""
         try:
             # Return only basic world title
-            return web.json_response({
-                "success": True,
-                "title": self.world.title
-            })
+            return web.json_response({"success": True, "title": self.world.title})
         except Exception as e:
             print(f"Error in world info handler: {e}")
             return web.json_response(
-                {"success": False, "message": "Server error"}, 
-                status=500
+                {"success": False, "message": "Server error"}, status=500
             )
 
     async def login_user(self, ws: web.WebSocketResponse) -> Player:
@@ -172,18 +164,20 @@ class Server:
         msg = await ws.receive()
         if msg.type != WSMsgType.TEXT:
             raise ValueError("Expected text message containing token")
-        
+
         token = msg.data.strip()
         user = await get_user_by_token(token)
-        
+
         if user is None:
-            await ws.send_json({
-                "msg_type": "error",
-                "message": "Invalid or expired token. Please log in via the web interface.",
-                "msg_src": None
-            })
+            await ws.send_json(
+                {
+                    "msg_type": "error",
+                    "message": "Invalid or expired token. Please log in via the web interface.",
+                    "msg_src": None,
+                }
+            )
             raise ValueError("Invalid authentication token")
-        
+
         # Create player with authenticated username
         return self.world.login_player(user.username)
 
@@ -191,41 +185,43 @@ class Server:
         """Handle WebSocket connections."""
         ws = web.WebSocketResponse()
         await ws.prepare(request)
-        
+
         try:
             # Login the player
             player = await self.login_user(ws)
             self.clients.append((player, ws))
-            
+
             # Set up player output task
             output_task = asyncio.create_task(self._handle_client_output(player, ws))
-            
+
             # Welcome message with world info
             welcome_message = (
                 f"Welcome to {self.world.title}!\n\n{self.world.brief_description}"
             )
             # Use the scroll flag for this important message
-            await player.send_message("server", welcome_message, msg_src=None, scroll=True)
-            
+            await player.send_message(
+                "server", welcome_message, msg_src=None, scroll=True
+            )
+
             # Show current room
             current_room = self.world.get_character_room(player.id)
             if current_room:
                 await player.send_message("room", current_room.brief_describe())
-            
+
             # Handle incoming messages
             async for msg in ws:
                 if msg.type == WSMsgType.TEXT:
                     await player.process_command(self.world, msg.data)
                 elif msg.type in (WSMsgType.CLOSED, WSMsgType.ERROR):
                     break
-            
+
             # Clean up output task
             output_task.cancel()
             try:
                 await output_task
             except asyncio.CancelledError:
                 pass
-                
+
         except Exception as e:
             print(f"Error in websocket handler: {e}")
             print(f"Traceback: {traceback.format_exc()}")
@@ -236,16 +232,18 @@ class Server:
                 if w == ws:
                     player_to_remove = p
                     break
-            
+
             if player_to_remove:
                 print(f"Logging out player {player_to_remove.name}")
                 self.world.logout_player(player_to_remove)
                 self.clients = [(p, w) for p, w in self.clients if w != ws]
                 await self.broadcast(f"{player_to_remove.name} left the server")
-            
+
         return ws
 
-    async def _handle_client_output(self, player: Player, ws: web.WebSocketResponse) -> None:
+    async def _handle_client_output(
+        self, player: Player, ws: web.WebSocketResponse
+    ) -> None:
         """Handle outgoing messages to a client."""
         try:
             # Process messages from player's queue
@@ -282,15 +280,15 @@ class Server:
         self.runner = web.AppRunner(self.app)
         await self.runner.setup()
         self.site = web.TCPSite(self.runner, host, port)
-        
+
         # Start web server
         await self.site.start()
         print(f"Server started on http://{host}:{port}")
         print(f"WebSocket endpoint at ws://{host}:{port}/ws")
-        
+
         # Start world ticker
         self.world_ticker_task = asyncio.create_task(self.run_world_ticker())
-        
+
         # Keep server running
         try:
             # Wait forever or until cancelled
@@ -310,7 +308,7 @@ class Server:
 
 async def main(world_file: str | Path, serve_web: bool = True) -> None:
     """Start the server with the given world file.
-    
+
     Args:
         world_file: Path to the world file to load
         serve_web: Whether to serve web frontend files

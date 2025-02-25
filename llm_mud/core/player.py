@@ -28,12 +28,17 @@ class Player(Character):
         return await self._queue.get()
 
     async def send_message(
-        self, msg_type: MessageToPlayerType, message: str, msg_src: str | None = None, 
-        scroll: bool = False
+        self,
+        msg_type: MessageToPlayerType,
+        message: str,
+        msg_src: str | None = None,
+        scroll: bool = False,
     ) -> None:
         """Send a message to the player."""
         await self._queue.put(
-            MessageToPlayer(msg_type=msg_type, message=message, msg_src=msg_src, scroll=scroll)
+            MessageToPlayer(
+                msg_type=msg_type, message=message, msg_src=msg_src, scroll=scroll
+            )
         )
 
     async def process_command(self, world: "World", command: str) -> None:

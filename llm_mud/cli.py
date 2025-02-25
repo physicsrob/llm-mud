@@ -9,7 +9,7 @@ from .gen.create_world import create_world as run_create_world
 
 async def run_server(world_file: str | Path, backend_only: bool = False):
     """Run the server.
-    
+
     Args:
         world_file: Path to the world file to load
         backend_only: If True, don't serve web frontend files
@@ -26,9 +26,9 @@ def main():
 @main.command()
 @click.argument("world_file")
 @click.option(
-    "--backend-only", 
-    is_flag=True, 
-    help="Run only the backend server without web interface"
+    "--backend-only",
+    is_flag=True,
+    help="Run only the backend server without web interface",
 )
 def server(world_file: str, backend_only: bool = False):
     """Start the MUD server.

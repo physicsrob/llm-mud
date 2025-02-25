@@ -1,4 +1,5 @@
 """Authentication utilities."""
+
 import datetime
 import jwt
 import os
@@ -8,12 +9,14 @@ from .users import User
 from .db import get_session
 
 # Use environment variable or set a default secret
-JWT_SECRET = os.environ.get('JWT_SECRET', 'development_secret_key')
-JWT_ALGORITHM = 'HS256'
+JWT_SECRET = os.environ.get("JWT_SECRET", "development_secret_key")
+JWT_ALGORITHM = "HS256"
 JWT_EXPIRATION = 24 * 60 * 60  # 24 hours in seconds
 
 
-def create_access_token(data: Dict[str, Any], expires_delta: Optional[int] = None) -> str:
+def create_access_token(
+    data: Dict[str, Any], expires_delta: Optional[int] = None
+) -> str:
     """Create a new JWT token."""
     to_encode = data.copy()
     expire = datetime.datetime.utcnow() + datetime.timedelta(
@@ -50,11 +53,11 @@ async def get_user_by_token(token: str) -> Optional[User]:
     payload = verify_token(token)
     if payload is None:
         return None
-        
+
     username = payload.get("sub")
     if username is None:
         return None
-        
+
     session = get_session()
     try:
         return session.query(User).filter(User.username == username).first()
