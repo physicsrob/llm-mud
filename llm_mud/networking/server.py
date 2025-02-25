@@ -152,8 +152,18 @@ class Server:
 
     async def login_user(self, ws: web.WebSocketResponse) -> Player:
         """Login a user and add them to the world."""
-        await ws.send_str("Welcome to the game!")
-        await ws.send_str("Please provide your authentication token:")
+        # Send welcome messages using JSON format
+        await ws.send_json({
+            "msg_type": "server",
+            "message": "Welcome to the game!",
+            "msg_src": None
+        })
+        
+        await ws.send_json({
+            "msg_type": "server",
+            "message": "Please provide your authentication token:",
+            "msg_src": None
+        })
         
         # Get token from client
         msg = await ws.receive()
@@ -164,7 +174,11 @@ class Server:
         user = await get_user_by_token(token)
         
         if user is None:
-            await ws.send_str("Invalid or expired token. Please log in via the web interface.")
+            await ws.send_json({
+                "msg_type": "error",
+                "message": "Invalid or expired token. Please log in via the web interface.",
+                "msg_src": None
+            })
             raise ValueError("Invalid authentication token")
         
         # Create player with authenticated username
@@ -190,7 +204,8 @@ class Server:
             welcome_message = (
                 f"Welcome to {self.world.title}!\n\n{self.world.brief_description}"
             )
-            await player.send_message("server", welcome_message)
+            # Use the scroll flag for this important message
+            await player.send_message("server", welcome_message, msg_src=None, scroll=True)
             
             # Show current room
             current_room = self.world.get_character_room(player.id)
@@ -237,7 +252,8 @@ class Server:
             async for message in player:
                 if ws.closed:
                     break
-                await ws.send_str(str(message))
+                # Send as JSON instead of string representation
+                await ws.send_json(message.model_dump())
         except Exception as e:
             print(f"Error handling client output for {player.name}: {e}")
             print(f"Traceback: {traceback.format_exc()}")

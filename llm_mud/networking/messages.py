@@ -22,6 +22,10 @@ class MessageToPlayer(BaseModel):
         description="The player or character who sent the message, otherwise None.",
         default=None,
     )
+    scroll: bool = Field(
+        description="Whether the client should scroll the terminal for this message.",
+        default=False,
+    )
 
     def __str__(self) -> str:
         color = {"server": BLUE, "room": GREEN, "error": RED}[self.msg_type]

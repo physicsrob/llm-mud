@@ -84,7 +84,7 @@ document.addEventListener('DOMContentLoaded', () => {
         letterSpacing: 0,       // Can be adjusted for spacing
         lineHeight: 1.2,        // Can increase for better readability
         allowTransparency: true,
-        cursorStyle: 'block',   // Options: 'block', 'underline', 'bar'
+        cursorStyle: 'underline', // Using underscore cursor
         cursorWidth: 2,
         scrollback: 1000        // Number of lines to keep in scrollback
     });
@@ -99,9 +99,21 @@ document.addEventListener('DOMContentLoaded', () => {
     // Fit terminal to container size
     fitAddon.fit();
     
+    // Auto-focus the terminal when the page loads
+    term.focus();
+    
     // Handle window resize
     window.addEventListener('resize', () => {
         fitAddon.fit();
+    });
+    
+    // Re-focus terminal on window/document click
+    document.addEventListener('click', () => {
+        // Don't focus if clicking on modal or form elements
+        const activeModals = document.querySelectorAll('.modal.active');
+        if (activeModals.length === 0) {
+            term.focus();
+        }
     });
     
     // Setup font size control
@@ -130,6 +142,8 @@ document.addEventListener('DOMContentLoaded', () => {
         const terminalElement = document.getElementById('terminal');
         terminalElement.style.backgroundColor = themes[newTheme].background;
     });
+    
+    // Typewriter effect is enabled by default with constant speed
 
     // Variables to manage command input
     let commandBuffer = '';
@@ -276,6 +290,9 @@ document.addEventListener('DOMContentLoaded', () => {
             
             // Send auth token to server
             socket.send(authToken);
+            
+            // Focus the terminal when the connection is established
+            term.focus();
         };
         
         socket.onclose = () => {
@@ -292,26 +309,157 @@ document.addEventListener('DOMContentLoaded', () => {
             term.writeln(`\r\nWebSocket error: ${error.message}`);
         };
         
-        socket.onmessage = (event) => {
-            // Process incoming message
-            const message = event.data;
+        // Message queue to handle messages in sequence
+        let messageQueue = [];
+        let processingMessages = false;
+        
+        // Function to handle typewriter effect
+        async function typeWriter(text) {
+            const TYPING_SPEED = 2; // ms per character (2.5x faster than before)
+            const LINE_DELAY = 50; // additional delay between lines
             
-            // Check if this is the welcome message with world title
-            if (message.startsWith('Welcome to ')) {
-                // Extract world title
+            // Split by lines and type each character with delay
+            const lines = text.split('\n');
+            for (let i = 0; i < lines.length; i++) {
+                const line = lines[i];
+                
+                // Move to start of line
+                term.write('\r');
+                
+                // Type each character with delay
+                for (let j = 0; j < line.length; j++) {
+                    term.write(line[j]);
+                    // Skip delay for spaces to make it feel more natural
+                    if (line[j] !== ' ') {
+                        await new Promise(resolve => setTimeout(resolve, TYPING_SPEED));
+                    }
+                }
+                
+                // Add newline between lines (except for the last line)
+                if (i < lines.length - 1) {
+                    term.write('\r\n');
+                    await new Promise(resolve => setTimeout(resolve, LINE_DELAY));
+                }
+            }
+        }
+        
+        // Process messages one at a time from the queue
+        async function processMessageQueue() {
+            if (processingMessages || messageQueue.length === 0) return;
+            
+            processingMessages = true;
+            
+            while (messageQueue.length > 0) {
+                const message = messageQueue.shift();
+                
+                // Set cursor to underscore and disable blinking during typing
+                const originalCursorStyle = term.options.cursorStyle;
+                const originalCursorBlink = term.options.cursorBlink;
+                
+                // Disable cursor blinking and set to underscore during typing
+                term.options.cursorStyle = 'underline';
+                term.options.cursorBlink = false;
+                
+                // Start on a fresh line with space for message
+                term.write('\r\n');
+                
+                // Check if we should apply scrolling effect for this message
+                console.log('Message:', message);
+                if (typeof message === 'object' && message.scroll) {
+                    console.log('Applying scroll effect for message');
+                    // Get current terminal dimensions
+                    const rows = term.rows;
+                    
+                    // Use all available rows (subtract 1 for the prompt line)
+                    const spacerRows = Math.max(5, rows - 1);
+                    
+                    // Send newlines to create space
+                    term.write('\n'.repeat(spacerRows));
+                    
+                    // Move cursor back up the same number of lines
+                    term.write('\033[' + spacerRows + 'A');
+                }
+                
+                // Use typewriter effect for the message text
+                // If message is an object (JSON format), use the formatted message text
+                if (typeof message === 'object') {
+                    await typeWriter(formatMessage(message));
+                } else {
+                    await typeWriter(message);
+                }
+                
+                // Restore original cursor settings
+                term.options.cursorStyle = originalCursorStyle;
+                term.options.cursorBlink = originalCursorBlink;
+                term.write('\r\n> ');
+                
+                // Ensure terminal has focus when displaying the prompt
+                term.focus();
+            }
+            
+            processingMessages = false;
+            commandBuffer = '';
+        }
+        
+        socket.onmessage = (event) => {
+            try {
+                // Parse JSON message
+                const jsonMessage = JSON.parse(event.data);
+                
+                // Add the original message to the queue with all properties intact
+                messageQueue.push(jsonMessage);
+                
+                // Start processing if not already doing so
+                processMessageQueue();
+            } catch (e) {
+                console.error("Error parsing message:", e);
+                // Fallback to displaying raw message if JSON parsing fails
+                messageQueue.push(event.data);
+                processMessageQueue();
+            }
+        };
+        
+        // Format message based on its type
+        function formatMessage(jsonMessage) {
+            const { msg_type, message, msg_src } = jsonMessage;
+            
+            // ANSI color codes for the terminal
+            const BLUE = "\x1b[34m";
+            const GREEN = "\x1b[32m";
+            const RED = "\x1b[31m";
+            const RESET = "\x1b[0m";
+            
+            // Set color based on message type
+            let colorCode;
+            switch(msg_type) {
+                case 'server':
+                    colorCode = BLUE;
+                    break;
+                case 'room':
+                    colorCode = GREEN;
+                    break;
+                case 'error':
+                    colorCode = RED;
+                    break;
+                default:
+                    colorCode = '';
+            }
+            
+            // Create prefix based on message type and source
+            let prefix = `[${msg_type}]`;
+            if (msg_src) {
+                prefix += ` ${msg_src}`;
+            }
+            
+            // Apply special formatting for welcome message
+            if (msg_type === 'server' && message.startsWith('Welcome to ')) {
+                // Extract world title for page title
                 const worldTitle = message.split('!')[0].replace('Welcome to ', '');
                 document.title = `${worldTitle} - LLM-MUD Terminal`;
             }
             
-            // Split message by newlines and write each line
-            const lines = message.split('\n');
-            for (const line of lines) {
-                term.writeln(`\r${line}`);
-            }
-            
-            term.write('\r\n> ');
-            commandBuffer = '';
-        };
+            return `${colorCode}${prefix}${RESET}: ${message}`;
+        }
     }
     
     // Handle terminal input
@@ -373,8 +521,16 @@ document.addEventListener('DOMContentLoaded', () => {
         userDisplay.textContent = username;
         logoutBtn.style.display = 'inline-block';
         connectWebSocket();
+        
+        // Ensure terminal has focus when connection is established
+        term.focus();
     } else {
         // Show login modal
         authModal.classList.add('active');
+        
+        // Focus on the first input field in the login form
+        setTimeout(() => {
+            document.getElementById('login-username').focus();
+        }, 100);
     }
 });

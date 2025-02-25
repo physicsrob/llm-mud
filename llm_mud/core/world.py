@@ -129,7 +129,8 @@ class World(BaseModel):
         elif action.action_type == "look":
             room = self.get_character_room(character.id)
             if room:
-                await character.send_message("room", room.describe())
+                # Set scroll to true for room descriptions
+                await character.send_message("room", room.describe(), scroll=True)
 
     # Persistence
     def save(self, filepath: str | Path) -> None:
