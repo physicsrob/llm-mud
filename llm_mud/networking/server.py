@@ -3,11 +3,17 @@ import traceback
 import json
 import os
 from aiohttp import web, WSMsgType
+from aiohttp_session import setup as setup_session
+from aiohttp_session.cookie_storage import EncryptedCookieStorage
+from cryptography import fernet
 from pathlib import Path
 
 from ..core.player import Player
 from ..core.world import World
 from ..core.command_parser import parse
+from ..db_models.users import User
+from ..db_models.db import init_db, get_session
+from ..db_models.auth import authenticate_user, create_access_token, get_user_by_token
 
 
 class Server:
@@ -19,6 +25,14 @@ class Server:
         self.runner = None
         self.site = None
         self.world_ticker_task = None
+        
+        # Set up session
+        fernet_key = fernet.Fernet.generate_key()
+        secret_key = fernet.Fernet(fernet_key)
+        setup_session(self.app, EncryptedCookieStorage(secret_key))
+        
+        # Initialize database
+        init_db()
         
         # Set up routes
         self.setup_routes()
@@ -36,6 +50,10 @@ class Server:
     
     def setup_routes(self):
         """Set up the HTTP and WebSocket routes."""
+        # API routes
+        self.app.router.add_post('/api/register', self.register_handler)
+        self.app.router.add_post('/api/login', self.login_handler)
+        
         # WebSocket endpoint
         self.app.router.add_get('/ws', self.websocket_handler)
         
@@ -51,17 +69,106 @@ class Server:
             else:
                 print(f"Warning: Web directory not found at {web_dir}")
 
+    async def register_handler(self, request):
+        """Handle user registration."""
+        try:
+            data = await request.json()
+            username = data.get('username')
+            password = data.get('password')
+            
+            if not username or not password:
+                return web.json_response(
+                    {"success": False, "message": "Username and password required"}, 
+                    status=400
+                )
+            
+            # Check if user already exists
+            session = get_session()
+            try:
+                existing_user = session.query(User).filter(User.username == username).first()
+                if existing_user:
+                    return web.json_response(
+                        {"success": False, "message": "Username already taken"}, 
+                        status=400
+                    )
+                
+                # Create new user
+                user = User.create(username=username, password=password)
+                session.add(user)
+                session.commit()
+                
+                # Create JWT token
+                token = create_access_token({"sub": user.username})
+                
+                return web.json_response({
+                    "success": True,
+                    "token": token,
+                    "username": user.username
+                })
+            finally:
+                session.close()
+        except Exception as e:
+            print(f"Error in register handler: {e}")
+            return web.json_response(
+                {"success": False, "message": "Server error"}, 
+                status=500
+            )
+    
+    async def login_handler(self, request):
+        """Handle user login."""
+        try:
+            data = await request.json()
+            username = data.get('username')
+            password = data.get('password')
+            
+            if not username or not password:
+                return web.json_response(
+                    {"success": False, "message": "Username and password required"}, 
+                    status=400
+                )
+            
+            # Authenticate user
+            user = await authenticate_user(username, password)
+            if not user:
+                return web.json_response(
+                    {"success": False, "message": "Invalid username or password"}, 
+                    status=401
+                )
+            
+            # Create JWT token
+            token = create_access_token({"sub": user.username})
+            
+            return web.json_response({
+                "success": True,
+                "token": token,
+                "username": user.username
+            })
+        except Exception as e:
+            print(f"Error in login handler: {e}")
+            return web.json_response(
+                {"success": False, "message": "Server error"}, 
+                status=500
+            )
+
     async def login_user(self, ws: web.WebSocketResponse) -> Player:
         """Login a user and add them to the world."""
         await ws.send_str("Welcome to the game!")
-        await ws.send_str("What is your name?")
+        await ws.send_str("Please provide your authentication token:")
         
+        # Get token from client
         msg = await ws.receive()
-        if msg.type == WSMsgType.TEXT:
-            name = msg.data.strip()
-            return self.world.login_player(name)
-        else:
-            raise ValueError("Expected text message for login")
+        if msg.type != WSMsgType.TEXT:
+            raise ValueError("Expected text message containing token")
+        
+        token = msg.data.strip()
+        user = await get_user_by_token(token)
+        
+        if user is None:
+            await ws.send_str("Invalid or expired token. Please log in via the web interface.")
+            raise ValueError("Invalid authentication token")
+        
+        # Create player with authenticated username
+        return self.world.login_player(user.username)
 
     async def websocket_handler(self, request):
         """Handle WebSocket connections."""

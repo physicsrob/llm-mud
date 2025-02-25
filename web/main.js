@@ -1,4 +1,19 @@
 document.addEventListener('DOMContentLoaded', () => {
+    // Auth state
+    let authToken = localStorage.getItem('auth_token');
+    let username = localStorage.getItem('username');
+    
+    // Auth modal elements
+    const authModal = document.getElementById('auth-modal');
+    const tabButtons = document.querySelectorAll('.tab-btn');
+    const tabContents = document.querySelectorAll('.tab-content');
+    const loginForm = document.getElementById('login-form-el');
+    const registerForm = document.getElementById('register-form-el');
+    const loginErrors = document.getElementById('login-errors');
+    const registerErrors = document.getElementById('register-errors');
+    const userDisplay = document.getElementById('user-display');
+    const logoutBtn = document.getElementById('logout-btn');
+    
     // Define terminal themes
     const themes = {
         dark: {
@@ -121,6 +136,120 @@ document.addEventListener('DOMContentLoaded', () => {
     let commandHistory = [];
     let historyPosition = -1;
     
+    // Tab switching functionality
+    tabButtons.forEach(button => {
+        button.addEventListener('click', () => {
+            // Remove active class from all buttons and contents
+            tabButtons.forEach(btn => btn.classList.remove('active'));
+            tabContents.forEach(content => content.classList.remove('active'));
+            
+            // Add active class to clicked button and corresponding content
+            button.classList.add('active');
+            const tabId = button.getAttribute('data-tab');
+            document.getElementById(`${tabId}-form`).classList.add('active');
+        });
+    });
+    
+    // Form submission handling
+    loginForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        loginErrors.textContent = '';
+        
+        const username = document.getElementById('login-username').value;
+        const password = document.getElementById('login-password').value;
+        
+        try {
+            const response = await fetch('/api/login', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ username, password })
+            });
+            
+            const data = await response.json();
+            
+            if (data.success) {
+                // Store auth data
+                localStorage.setItem('auth_token', data.token);
+                localStorage.setItem('username', data.username);
+                authToken = data.token;
+                
+                // Update UI
+                authModal.classList.remove('active');
+                userDisplay.textContent = data.username;
+                logoutBtn.style.display = 'inline-block';
+                
+                // Connect to WebSocket with token
+                connectWebSocket();
+            } else {
+                loginErrors.textContent = data.message || 'Invalid credentials';
+            }
+        } catch (error) {
+            loginErrors.textContent = 'Server error. Please try again.';
+        }
+    });
+    
+    registerForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        registerErrors.textContent = '';
+        
+        const username = document.getElementById('register-username').value;
+        const password = document.getElementById('register-password').value;
+        const confirm = document.getElementById('register-confirm').value;
+        
+        if (password !== confirm) {
+            registerErrors.textContent = 'Passwords do not match';
+            return;
+        }
+        
+        try {
+            const response = await fetch('/api/register', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ username, password })
+            });
+            
+            const data = await response.json();
+            
+            if (data.success) {
+                // Store auth data
+                localStorage.setItem('auth_token', data.token);
+                localStorage.setItem('username', data.username);
+                authToken = data.token;
+                
+                // Update UI
+                authModal.classList.remove('active');
+                userDisplay.textContent = data.username;
+                logoutBtn.style.display = 'inline-block';
+                
+                // Connect to WebSocket with token
+                connectWebSocket();
+            } else {
+                registerErrors.textContent = data.message || 'Registration failed';
+            }
+        } catch (error) {
+            registerErrors.textContent = 'Server error. Please try again.';
+        }
+    });
+    
+    // Logout functionality
+    logoutBtn.addEventListener('click', () => {
+        // Clear auth data
+        localStorage.removeItem('auth_token');
+        localStorage.removeItem('username');
+        authToken = null;
+        
+        // Update UI
+        userDisplay.textContent = 'Not logged in';
+        logoutBtn.style.display = 'none';
+        
+        // Disconnect and show login
+        if (socket && socket.readyState === WebSocket.OPEN) {
+            socket.close();
+        }
+        
+        authModal.classList.add('active');
+    });
+    
     // Connect to WebSocket server
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const wsUrl = `${protocol}//${window.location.host}/ws`;
@@ -129,6 +258,12 @@ document.addEventListener('DOMContentLoaded', () => {
     let connected = false;
     
     function connectWebSocket() {
+        // Don't connect if no auth token
+        if (!authToken) {
+            authModal.classList.add('active');
+            return;
+        }
+        
         term.writeln('Connecting to server...');
         
         socket = new WebSocket(wsUrl);
@@ -138,6 +273,9 @@ document.addEventListener('DOMContentLoaded', () => {
             document.getElementById('connection-status').textContent = 'Connected';
             document.getElementById('connection-status').classList.add('connected');
             term.writeln('Connection established!');
+            
+            // Send auth token to server
+            socket.send(authToken);
         };
         
         socket.onclose = () => {
@@ -227,9 +365,16 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // Initialize with welcome message
     term.writeln('Welcome to LLM-MUD Terminal');
-    term.writeln('Connecting to server...');
+    term.writeln('Please log in to continue...');
     term.write('> ');
     
-    // Connect to WebSocket server
-    connectWebSocket();
+    // Check if user is already logged in
+    if (authToken && username) {
+        userDisplay.textContent = username;
+        logoutBtn.style.display = 'inline-block';
+        connectWebSocket();
+    } else {
+        // Show login modal
+        authModal.classList.add('active');
+    }
 });

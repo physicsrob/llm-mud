@@ -1,3 +1,4 @@
 .vscode/
 __pycache__
 world_map.png
+llm_mud.db
