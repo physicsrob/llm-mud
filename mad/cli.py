@@ -19,7 +19,7 @@ async def run_server(world_file: str | Path, backend_only: bool = False):
 
 @click.group()
 def main():
-    """LLM-MUD: A text-based multiplayer game."""
+    """MAD: A text-based multiplayer game."""
     pass
 
 

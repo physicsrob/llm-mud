@@ -1,14 +1,14 @@
-from llm_mud.core.room import Room
-from llm_mud.core.world import World
-from llm_mud.gen.data_model import Edge, WorldDescription
-from llm_mud.gen.describe_room_agent import describe_room
+from mad.core.room import Room
+from mad.core.world import World
+from mad.gen.data_model import Edge, WorldDescription
+from mad.gen.describe_room_agent import describe_room
 from .starting_room import generate_starting_room
 from .add_edge_agent import add_edge
 from .describe_world_agent import describe_world
 from .vis_map import visualize
 from devtools import debug
-from llm_mud.gen.graph import get_random_room_id, get_subgraph
-from llm_mud.gen.cycle_finder import suggest_cycle
+from mad.gen.graph import get_random_room_id, get_subgraph
+from mad.gen.cycle_finder import suggest_cycle
 
 max_exits = 4
 

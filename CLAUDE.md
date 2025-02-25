@@ -1,8 +1,8 @@
-# LLM-MUD Project Guidelines
+# MAD Project Guidelines
 
 ## Commands
 - Install: `pip install -e .`
-- Run server: `llmmud server <world_file>`
+- Run server: `mad server <world_file>`
 
 ## Code Style
 - Python >= 3.10 with type hints

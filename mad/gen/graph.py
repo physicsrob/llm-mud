@@ -4,7 +4,7 @@ from dataclasses import dataclass
 import networkx as nx
 import random
 
-from llm_mud.gen.data_model import Edge
+from mad.gen.data_model import Edge
 
 
 @dataclass

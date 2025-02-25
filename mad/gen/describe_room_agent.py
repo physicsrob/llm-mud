@@ -2,7 +2,7 @@ from pydantic import BaseModel, Field
 from pydantic_ai import Agent
 from pydantic_ai.models.openai import OpenAIModel
 
-from llm_mud.gen.data_model import Edge, RoomDescription, WorldDescription
+from mad.gen.data_model import Edge, RoomDescription, WorldDescription
 
 from ..config import creative_model, OPENROUTER_BASE_URL, OPENROUTER_API_KEY
 

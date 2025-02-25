@@ -5,7 +5,7 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
-from llm_mud.gen.data_model import Edge
+from mad.gen.data_model import Edge
 
 
 def visualize(edges: list[Edge], title: str, outfile: str) -> None:

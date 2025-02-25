@@ -2,7 +2,7 @@ from collections import defaultdict
 import numpy as np
 from typing import TypeAlias
 
-from llm_mud.gen.data_model import Edge
+from mad.gen.data_model import Edge
 
 # Types
 Vector3D: TypeAlias = np.ndarray  # shape (3,) dtype=float

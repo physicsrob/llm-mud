@@ -13,7 +13,7 @@ def get_engine(db_url: Optional[str] = None):
     """Create a database engine."""
     # Default to SQLite for development
     if db_url is None:
-        db_url = "sqlite:///llm_mud.db"
+        db_url = "sqlite:///mad.db"
     return create_engine(db_url)
 
 

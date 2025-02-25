@@ -1,8 +1,8 @@
 import random
 from pydantic_ai import Agent
 
-from llm_mud.gen.data_model import Edge
-from llm_mud.gen.data_model import WorldDescription
+from mad.gen.data_model import Edge
+from mad.gen.data_model import WorldDescription
 
 from ..config import creative_model_instance
 

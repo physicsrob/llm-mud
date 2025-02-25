@@ -1,8 +1,8 @@
 from pydantic_ai import Agent
 from pydantic_ai.models.openai import OpenAIModel
 
-from llm_mud.gen.data_model import RoomDescription
-from llm_mud.gen.data_model import WorldDescription
+from mad.gen.data_model import RoomDescription
+from mad.gen.data_model import WorldDescription
 from ..config import creative_model_instance
 
 

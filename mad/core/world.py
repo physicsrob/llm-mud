@@ -3,10 +3,10 @@ from pydantic import BaseModel, Field
 from pathlib import Path
 from collections import defaultdict
 
-from llm_mud.core.character import Character
-from llm_mud.core.character_action import CharacterAction
-from llm_mud.core.player import Player
-from llm_mud.core.room import Room
+from mad.core.character import Character
+from mad.core.character_action import CharacterAction
+from mad.core.player import Player
+from mad.core.room import Room
 
 
 class World(BaseModel):
