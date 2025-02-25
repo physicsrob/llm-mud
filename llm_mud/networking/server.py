@@ -234,7 +234,6 @@ class Server:
                     break
 
             if player_to_remove:
-                print(f"Logging out player {player_to_remove.name}")
                 self.world.logout_player(player_to_remove)
                 self.clients = [(p, w) for p, w in self.clients if w != ws]
                 await self.broadcast(f"{player_to_remove.name} left the server")

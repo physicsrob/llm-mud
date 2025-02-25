@@ -296,6 +296,10 @@ document.addEventListener('DOMContentLoaded', () => {
             connected = false;
             document.getElementById('connection-status').textContent = 'Disconnected';
             document.getElementById('connection-status').classList.remove('connected');
+            
+            // Stop spinner if active when connection closes
+            stopSpinner();
+            
             term.writeln('\r\nConnection closed. Attempting to reconnect in 5 seconds...');
             
             // Attempt to reconnect after 5 seconds
@@ -303,6 +307,9 @@ document.addEventListener('DOMContentLoaded', () => {
         };
         
         socket.onerror = (error) => {
+            // Stop spinner if active when error occurs
+            stopSpinner();
+            
             term.writeln(`\r\nWebSocket error: ${error.message}`);
         };
         
@@ -310,12 +317,11 @@ document.addEventListener('DOMContentLoaded', () => {
         let messageQueue = [];
         let processingMessages = false;
         
-        // Function to handle typewriter effect
+        // Function to handle typewriter effect (word by word)
         async function typeWriter(text) {
-            const TYPING_SPEED = 2; // ms per character (2.5x faster than before)
-            const LINE_DELAY = 50; // additional delay between lines
+            const TYPING_SPEED = 10; // ms per word
             
-            // Split by lines and type each character with delay
+            // Split by lines and type each word with delay
             const lines = text.split('\n');
             for (let i = 0; i < lines.length; i++) {
                 const line = lines[i];
@@ -323,11 +329,25 @@ document.addEventListener('DOMContentLoaded', () => {
                 // Move to start of line
                 term.write('\r');
                 
-                // Type each character with delay
-                for (let j = 0; j < line.length; j++) {
-                    term.write(line[j]);
-                    // Skip delay for spaces to make it feel more natural
-                    if (line[j] !== ' ') {
+                // Split line into words and type each word with delay
+                const words = line.split(/(\s+)/); // Split by whitespace but keep the separators
+                let currentPosition = 0;
+                
+                for (let j = 0; j < words.length; j++) {
+                    const word = words[j];
+                    // Check if this word will exceed terminal width
+                    if (currentPosition + word.length >= term.cols && currentPosition > 0 && !/^\s+$/.test(word)) {
+                        // Insert a line break before this word
+                        term.write('\r\n');
+                        currentPosition = 0;
+                    }
+                    
+                    // Write the word
+                    term.write(word);
+                    currentPosition += word.length;
+                    
+                    // Add delay after each word (but not after whitespace)
+                    if (!/^\s+$/.test(word)) {
                         await new Promise(resolve => setTimeout(resolve, TYPING_SPEED));
                     }
                 }
@@ -335,7 +355,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 // Add newline between lines (except for the last line)
                 if (i < lines.length - 1) {
                     term.write('\r\n');
-                    await new Promise(resolve => setTimeout(resolve, LINE_DELAY));
                 }
             }
         }
@@ -361,9 +380,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 term.write('\r\n');
                 
                 // Check if we should apply scrolling effect for this message
-                console.log('Message:', message);
                 if (typeof message === 'object' && message.scroll) {
-                    console.log('Applying scroll effect for message');
                     // Get current terminal dimensions
                     const rows = term.rows;
                     
@@ -400,6 +417,9 @@ document.addEventListener('DOMContentLoaded', () => {
         
         socket.onmessage = (event) => {
             try {
+                // Stop the spinner when we receive a response
+                stopSpinner();
+                
                 // Parse JSON message
                 const jsonMessage = JSON.parse(event.data);
                 
@@ -455,6 +475,54 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
     
+    // Spinner animation
+    let spinnerInterval = null;
+    let spinnerTimeout = null;
+    const spinnerFrames = ['●∙∙∙', '∙●∙∙', '∙∙●∙', '∙∙∙●', '∙∙●∙', '∙●∙∙'];
+    let spinnerFrame = 0;
+    
+    function startSpinner() {
+        // Clear any existing spinner
+        stopSpinner();
+        
+        // Initialize spinner state
+        spinnerFrame = 0;
+        
+        // Write initial frame inline without newline
+        // Use cyan color for spinner (\x1b[36m)
+        term.write('\x1b[36m' + spinnerFrames[0] + '\x1b[0m');
+        
+        // Start spinner animation
+        spinnerInterval = setInterval(() => {
+            spinnerFrame = (spinnerFrame + 1) % spinnerFrames.length;
+            // Move cursor back 4 characters and write the next frame with same color
+            term.write('\b\b\b\b\x1b[36m' + spinnerFrames[spinnerFrame] + '\x1b[0m');
+        }, 150); // Animation speed - adjust as needed
+        
+        // Set a timeout to stop the spinner after 30 seconds if no response
+        spinnerTimeout = setTimeout(() => {
+            stopSpinner();
+            term.write('\r\n\x1b[31mNo response received.\x1b[0m\r\n> ');
+        }, 30000); // 30 second timeout
+    }
+    
+    function stopSpinner() {
+        // Clear interval and timeout
+        if (spinnerInterval) {
+            clearInterval(spinnerInterval);
+            spinnerInterval = null;
+        }
+        
+        if (spinnerTimeout) {
+            clearTimeout(spinnerTimeout);
+            spinnerTimeout = null;
+        }
+        
+        // Clear the spinner text by writing spaces over it
+        // Need to account for the ANSI color codes when clearing
+        term.write('\b\b\b\b\b\b\b\b\b\b          \r');
+    }
+    
     // Handle terminal input
     term.onKey(({ key, domEvent }) => {
         const printable = !domEvent.altKey && !domEvent.ctrlKey && !domEvent.metaKey;
@@ -463,11 +531,17 @@ document.addEventListener('DOMContentLoaded', () => {
         if (domEvent.keyCode === 13) { // Enter key
             // Send command to server
             if (connected && commandBuffer.trim()) {
+                term.write('\r\n');
+                
+                // Start spinner animation on the same line
+                startSpinner();
+                
                 socket.send(commandBuffer);
                 commandHistory.push(commandBuffer);
                 historyPosition = commandHistory.length;
+            } else {
+                term.write('\r\n');
             }
-            term.write('\r\n');
             commandBuffer = '';
         } else if (domEvent.keyCode === 8) { // Backspace
             if (commandBuffer.length > 0) {
