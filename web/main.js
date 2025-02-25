@@ -278,15 +278,12 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
         
-        term.writeln('Connecting to server...');
-        
         socket = new WebSocket(wsUrl);
         
         socket.onopen = () => {
             connected = true;
             document.getElementById('connection-status').textContent = 'Connected';
             document.getElementById('connection-status').classList.add('connected');
-            term.writeln('Connection established!');
             
             // Send auth token to server
             socket.send(authToken);
@@ -451,12 +448,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 prefix += ` ${msg_src}`;
             }
             
-            // Apply special formatting for welcome message
-            if (msg_type === 'server' && message.startsWith('Welcome to ')) {
-                // Extract world title for page title
-                const worldTitle = message.split('!')[0].replace('Welcome to ', '');
-                document.title = `${worldTitle} - LLM-MUD Terminal`;
-            }
+            // No need to extract world title from welcome message anymore
+            // We now get it from the API
             
             return `${colorCode}${prefix}${RESET}: ${message}`;
         }
@@ -511,10 +504,31 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
     
-    // Initialize with welcome message
-    term.writeln('Welcome to LLM-MUD Terminal');
-    term.writeln('Please log in to continue...');
+    // Fetch world info for page title and header
+    async function fetchWorldInfo() {
+        try {
+            const response = await fetch('/api/world-info');
+            const data = await response.json();
+            if (data.success && data.title) {
+                // Update page title
+                document.title = `${data.title} - LLM-MUD`;
+                
+                // Update header
+                const headerTitle = document.querySelector('header h1');
+                if (headerTitle) {
+                    headerTitle.textContent = data.title;
+                }
+            }
+        } catch (error) {
+            console.error("Error fetching world info:", error);
+        }
+    }
+    
+    // Initialize with blank prompt
     term.write('> ');
+    
+    // Fetch world info on page load
+    fetchWorldInfo();
     
     // Check if user is already logged in
     if (authToken && username) {

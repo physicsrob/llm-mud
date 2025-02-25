@@ -53,6 +53,7 @@ class Server:
         # API routes
         self.app.router.add_post('/api/register', self.register_handler)
         self.app.router.add_post('/api/login', self.login_handler)
+        self.app.router.add_get('/api/world-info', self.world_info_handler)
         
         # WebSocket endpoint
         self.app.router.add_get('/ws', self.websocket_handler)
@@ -149,22 +150,24 @@ class Server:
                 {"success": False, "message": "Server error"}, 
                 status=500
             )
+            
+    async def world_info_handler(self, request):
+        """Handle world info requests."""
+        try:
+            # Return only basic world title
+            return web.json_response({
+                "success": True,
+                "title": self.world.title
+            })
+        except Exception as e:
+            print(f"Error in world info handler: {e}")
+            return web.json_response(
+                {"success": False, "message": "Server error"}, 
+                status=500
+            )
 
     async def login_user(self, ws: web.WebSocketResponse) -> Player:
         """Login a user and add them to the world."""
-        # Send welcome messages using JSON format
-        await ws.send_json({
-            "msg_type": "server",
-            "message": "Welcome to the game!",
-            "msg_src": None
-        })
-        
-        await ws.send_json({
-            "msg_type": "server",
-            "message": "Please provide your authentication token:",
-            "msg_src": None
-        })
-        
         # Get token from client
         msg = await ws.receive()
         if msg.type != WSMsgType.TEXT:
@@ -193,9 +196,6 @@ class Server:
             # Login the player
             player = await self.login_user(ws)
             self.clients.append((player, ws))
-            
-            # Broadcast join message
-            await self.broadcast(f"{player.name} joined the server")
             
             # Set up player output task
             output_task = asyncio.create_task(self._handle_client_output(player, ws))
