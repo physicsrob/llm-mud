@@ -4,8 +4,13 @@
 - Install: `pip install -e .`
 - Run server: `mad server <world_file>`
 
+## Pydantic AI
+- pydantic-ai is a framework for building LLM agents. Whenever working with pydantic-ai read pydantic-ai-guide.md
+
 ## Code Style
 - Python >= 3.10 with type hints
+- Type annotations using Python 3.9+ style. Use built-in types like list and tuple directly rather than importing from typing. Use "|None" instead of Optional, etc.
+- Thorough and professional comments
 - Imports: standard library first, then project imports
 - Naming: snake_case for variables/functions, PascalCase for classes
 - Classes: Pydantic models for data validation

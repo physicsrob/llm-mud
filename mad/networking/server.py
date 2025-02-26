@@ -47,6 +47,22 @@ class Server:
             serve_web: Whether to serve web frontend files
         """
         world = World.load(world_file)
+        
+        # Add a CharAgent to the starting room
+        from ..core.char_agent import CharAgent
+        
+        # Create a new character agent named "Guide"
+        guide = CharAgent(name="Guide", world=world)
+        
+        # Add the agent to the characters dictionary
+        world.characters[guide.id] = guide
+        
+        # Add the agent to the starting room
+        if world.starting_room_id:
+            if not world.starting_room_id in world.room_characters:
+                world.room_characters[world.starting_room_id] = []
+            world.room_characters[world.starting_room_id].append(guide.id)
+        
         return cls(world, serve_web)
 
     def setup_routes(self):

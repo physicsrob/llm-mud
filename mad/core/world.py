@@ -151,9 +151,20 @@ class World(BaseModel):
         """Process one game tick for all characters."""
         # Only tick actual character objects from our characters dict
         if self.characters:
-            await asyncio.gather(
-                *(character.tick() for character in self.characters.values())
+            # Use return_exceptions=True to prevent one failure from stopping all ticks
+            results = await asyncio.gather(
+                *(character.tick() for character in self.characters.values()),
+                return_exceptions=True
             )
+            
+            # Handle any exceptions that occurred
+            for i, result in enumerate(results):
+                if isinstance(result, Exception):
+                    character_id = list(self.characters.keys())[i]
+                    character_name = self.characters[character_id].name
+                    print(f"Error in tick() for character {character_name} ({character_id}): {result}")
+                    # Consider additional error handling like removing crashed characters
+                    # or sending admin notifications for persistent issues
 
     async def process_character_action(
         self, character: Character, action: CharacterAction
@@ -181,12 +192,29 @@ class World(BaseModel):
         elif action.action_type == "look":
             room = self.get_character_room(character.id)
             if room:
+                # Get characters in the room excluding the current character
+                characters_in_room = []
+                if room.id in self.room_characters:
+                    for char_id in self.room_characters[room.id]:
+                        if char_id != character.id and char_id in self.characters:
+                            characters_in_room.append(self.characters[char_id].name)
+                
+                # Build the room description including characters
+                room_desc = room.describe()
+                if characters_in_room:
+                    if len(characters_in_room) == 1:
+                        room_desc += f"\n\nYou see {characters_in_room[0]} here."
+                    else:
+                        last_char = characters_in_room.pop()
+                        chars_text = f"{', '.join(characters_in_room)} and {last_char}"
+                        room_desc += f"\n\nYou see {chars_text} here."
+                
                 # Set scroll to true for room descriptions
                 await character.send_message(
                     MessageToCharacter(
                         title=room.title,
                         title_color="green",
-                        message=room.describe(),
+                        message=room_desc,
                         scroll=True
                     )
                 )
@@ -241,11 +269,12 @@ class World(BaseModel):
                     await character.send_message(
                         MessageToCharacter(
                             message=formatted_message,
-                            message_color=message_color
+                            message_color=message_color,
+                            msg_src=msg_src
                         )
                     )
-                except Exception:
-                    pass
+                except Exception as e:
+                    print(f"Error sending message to {character_id}: {e}")
     
     # Persistence
     def save(self, filepath: str | Path) -> None:
