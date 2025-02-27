@@ -49,6 +49,26 @@ class World(BaseModel):
             if character_id in characters:
                 return self.rooms.get(room_id)
         return None
+        
+    def room_has_players(self, room_id: str) -> bool:
+        """Check if a room has any player characters.
+        
+        Args:
+            room_id: The ID of the room to check
+            
+        Returns:
+            True if there are players in the room, False otherwise
+        """
+        from mad.core.player import Player
+        
+        if room_id not in self.room_characters:
+            return False
+            
+        for char_id in self.room_characters[room_id]:
+            if char_id in self.characters and isinstance(self.characters[char_id], Player):
+                return True
+                
+        return False
 
     async def move_character(self, character_id: str, direction: str) -> Room | None:
         """Move a character in a direction if possible."""

@@ -261,15 +261,8 @@ class CharAgent(Character):
         
         # Check if room has any players, if not add extra idle time
         room = self._world.get_character_room(self.id)
-        if room and room.id in self._world.room_characters:
-            has_player = False
-            for char_id in self._world.room_characters[room.id]:
-                if char_id.startswith("player_"):  # Player IDs start with "player_"
-                    has_player = True
-                    break
-            
-            if not has_player:
-                idle_time += empty_room_extra_idle
+        if room and not self._world.room_has_players(room.id):
+            idle_time += empty_room_extra_idle
                 
         # Set idle time for next action
         self._idle_until = time.time() + idle_time
