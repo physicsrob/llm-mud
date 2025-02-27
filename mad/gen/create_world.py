@@ -6,6 +6,7 @@ from .starting_room import generate_starting_room
 from .add_edge_agent import add_edge
 from .describe_world_agent import describe_world
 from .vis_map import visualize
+from .create_character_agent import create_character_agent
 from devtools import debug
 from mad.gen.graph import get_random_room_id, get_subgraph
 from mad.gen.cycle_finder import suggest_cycle
@@ -129,4 +130,20 @@ async def create_world(theme: str, room_count: int = 10) -> World:
         rooms=rooms,
         starting_room_id=starting_room_desc.id,
     )
+    
+    # Create one character for each room and place them in their rooms
+    print("\nGenerating characters for each room...")
+    for room_id, room in rooms.items():
+        character = await create_character_agent(world_desc, room, world)
+        
+        # Add character to the world
+        world.characters[character.id] = character
+        
+        # Add character to the room
+        if room_id not in world.room_characters:
+            world.room_characters[room_id] = []
+        world.room_characters[room_id].append(character.id)
+        
+        print(f"Created character '{character.name}' in room '{room.title}'")
+    
     return world
