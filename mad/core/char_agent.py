@@ -185,14 +185,19 @@ class CharAgent(Character):
         if self._state.last_message:
             message = self._state.last_message
             self._state.last_message = None
+            print(f"[DEBUG] {self.name}: Processing message {message}")
             await self._run_agent_for_message(message)
             return
             
         # Check if we're still in idle period
-        if time.time() < self._idle_until:
+        current_time = time.time()
+        if current_time < self._idle_until:
+            time_left = self._idle_until - current_time
+            print(f"[DEBUG] {self.name}: Still idling for {time_left:.1f} more seconds")
             return  # Do nothing during idle time
         
         # Idle period complete, run the agent to decide next action
+        print(f"[DEBUG] {self.name}: Idle time complete, deciding next action")
         await self._run_agent_for_idle()
     
     async def _run_agent_for_idle(self) -> None:
@@ -215,6 +220,9 @@ class CharAgent(Character):
         result = await self._agent.run(
             f"Decide what to do next. Choose an appropriate action for the current situation.\n\nContext: {context.model_dump_json()}"
         )
+        
+        # Debug the response from the agent
+        print(f"[DEBUG] {self.name}: Agent response: {result.data}")
         
         # Process the result
         await self._process_action_decision(result.data)
@@ -241,6 +249,9 @@ class CharAgent(Character):
             f"Decide how to respond to this message. Choose an appropriate action based on the message content.\n\nContext: {context.model_dump_json()}"
         )
         
+        # Debug the response from the agent
+        print(f"[DEBUG] {self.name}: Agent response to message: {result.data}")
+        
         # Process the result
         await self._process_action_decision(result.data)
     
@@ -250,21 +261,29 @@ class CharAgent(Character):
         
         # Check if it's an idle action
         if isinstance(action, IdleAction):
-            self._idle_until = time.time() + action.duration
+            idle_duration = action.duration
+            print(f"[DEBUG] {self.name}: Idle action with duration {idle_duration} seconds")
+            self._idle_until = time.time() + idle_duration
             return
         
         # Otherwise, it's a character action
+        print(f"[DEBUG] {self.name}: Performing {action.action_type} action")
         await self._world.process_character_action(self, action)
         
         # Apply idle time specified by the agent
         idle_time = decision.idle_duration
+        print(f"[DEBUG] {self.name}: Base idle duration: {idle_time} seconds")
         
         # Check if room has any players, if not add extra idle time
         room = self._world.get_character_room(self.id)
         if room and not self._world.room_has_players(room.id):
+            print(f"[DEBUG] {self.name}: No players in room, adding extra {empty_room_extra_idle} seconds")
             idle_time += empty_room_extra_idle
+        else:
+            print(f"[DEBUG] {self.name}: Players in room, using normal idle time")
                 
         # Set idle time for next action
+        print(f"[DEBUG] {self.name}: Total idle time: {idle_time} seconds")
         self._idle_until = time.time() + idle_time
     
     async def send_message(self, msg: MessageToCharacter) -> None:
