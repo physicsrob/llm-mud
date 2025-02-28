@@ -14,7 +14,7 @@ from ..core.command_parser import parse
 from ..db_models.users import User
 from ..db_models.db import init_db, get_session
 from ..db_models.auth import authenticate_user, create_access_token, get_user_by_token
-from ..networking.messages import MessageToCharacter
+from ..networking.messages import BaseMessage, SystemMessage
 
 
 class Server:
@@ -171,15 +171,13 @@ class Server:
         user = await get_user_by_token(token)
 
         if user is None:
-            await ws.send_json(
-                {
-                    "message": "Invalid or expired token. Please log in via the web interface.",
-                    "title": "Error",
-                    "title_color": "red",
-                    "message_color": "red",
-                    "msg_src": None,
-                }
+            # Create error message and immediately convert to dict for sending
+            error_msg = SystemMessage(
+                content="Invalid or expired token. Please log in via the web interface.",
+                title="Error",
+                severity="error"
             )
+            await ws.send_json(error_msg.model_dump())
             raise ValueError("Invalid authentication token")
 
         # Create player with authenticated username
@@ -238,7 +236,8 @@ class Server:
             async for message in player:
                 if ws.closed:
                     break
-                # Send as JSON instead of string representation
+                    
+                # Send message as JSON to the client
                 await ws.send_json(message.model_dump())
         except Exception as e:
             print(f"Error handling client output for {player.name}: {e}")

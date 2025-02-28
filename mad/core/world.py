@@ -9,7 +9,10 @@ from mad.core.character_action import CharacterAction
 from mad.core.player import Player
 from mad.core.char_agent import CharAgent
 from mad.core.room import Room
-from mad.networking.messages import MessageToCharacter
+from mad.networking.messages import (
+    BaseMessage, RoomMessage, SystemMessage, 
+    DialogMessage, EmoteMessage, MovementMessage
+)
 
 CharType = Annotated[Player | CharAgent, Field(discriminator='type')]
 
@@ -160,13 +163,12 @@ class World(BaseModel):
 
         # Welcome message with world info
         welcome_message = f"Welcome to {self.title}!"
-        # Use the scroll flag for this important message
+        # Send system message with world info
         await player.send_message(
-            MessageToCharacter(
+            SystemMessage(
+                content=self.brief_description,
                 title=welcome_message,
-                title_color="blue",
-                message=self.brief_description,
-                scroll=False
+                severity="info"
             )
         )
 
@@ -176,16 +178,13 @@ class World(BaseModel):
         # Get characters in the room excluding the player
         characters_in_room = self.get_characters_in_room(current_room.id, player.id)
         
-        # Build the room description including characters
-        room_desc = current_room.brief_describe()
-        room_desc += self.format_characters_text(characters_in_room)
-        
-        # Send initial room description to player
+        # Send room description to player
         await player.send_message(
-            MessageToCharacter(
+            RoomMessage(
                 title=current_room.title,
-                title_color="green",
-                message=room_desc
+                description=current_room.brief_describe(),
+                characters_present=characters_in_room,
+                exits=list(current_room.exits.keys())
             )
         )
 
@@ -233,30 +232,28 @@ class World(BaseModel):
         self, character: Character, action: CharacterAction
     ) -> None:
         """Process a character's action."""
+        
         if action.action_type == "move":
             room = await self.move_character(character.id, action.direction)
             if room is None:
                 await character.send_message(
-                    MessageToCharacter(
+                    SystemMessage(
+                        content="You can't go that way.",
                         title="Error",
-                        title_color="red",
-                        message="You can't go that way.",
-                        message_color="red"
+                        severity="error"
                     )
                 )
             else:
                 # Get characters in the room excluding the current character
                 characters_in_room = self.get_characters_in_room(room.id, character.id)
                 
-                # Build the room description including characters
-                room_desc = room.brief_describe()
-                room_desc += self.format_characters_text(characters_in_room)
-                
+                # Send room description with all metadata
                 await character.send_message(
-                    MessageToCharacter(
+                    RoomMessage(
                         title=room.title,
-                        title_color="green",
-                        message=room_desc
+                        description=room.brief_describe(),
+                        characters_present=characters_in_room,
+                        exits=list(room.exits.keys())
                     )
                 )
         elif action.action_type == "look":
@@ -265,17 +262,13 @@ class World(BaseModel):
                 # Get characters in the room excluding the current character
                 characters_in_room = self.get_characters_in_room(room.id, character.id)
                 
-                # Build the room description including characters
-                room_desc = room.describe()
-                room_desc += self.format_characters_text(characters_in_room)
-                
-                # Set scroll to true for room descriptions
+                # Send detailed room description
                 await character.send_message(
-                    MessageToCharacter(
+                    RoomMessage(
                         title=room.title,
-                        title_color="green",
-                        message=room_desc,
-                        scroll=True
+                        description=room.describe(),  # Full description for "look"
+                        characters_present=characters_in_room,
+                        exits=list(room.exits.keys())
                     )
                 )
         elif action.action_type in ("say", "emote") and action.message:
@@ -305,24 +298,7 @@ class World(BaseModel):
                     characters_in_room.append(self.characters[char_id].name)
         return characters_in_room
 
-    def format_characters_text(self, characters: list[str]) -> str:
-        """Format a list of character names for display.
-        
-        Args:
-            characters: List of character names
-            
-        Returns:
-            Formatted text describing characters present
-        """
-        if not characters:
-            return ""
-            
-        if len(characters) == 1:
-            return f"\n\nYou see {characters[0]} here."
-        else:
-            last_char = characters.pop()
-            chars_text = f"{', '.join(characters)} and {last_char}"
-            return f"\n\nYou see {chars_text} here."
+    # Note: Character formatting is now handled by the frontend using the characters_present list
 
     async def broadcast_to_room(
         self, 
@@ -343,7 +319,7 @@ class World(BaseModel):
         """
         if room_id not in self.room_characters:
             return
-            
+        
         for character_id in self.room_characters[room_id]:
             if exclude_character_id and character_id == exclude_character_id:
                 continue
@@ -351,25 +327,21 @@ class World(BaseModel):
             character = self.characters.get(character_id)
             if character and msg_src:
                 try:
-                    formatted_message = ""
-                    message_color = None
-                    
-                    # Format based on action type
+                    # Create appropriate message type
                     if action_type == "say":
-                        formatted_message = f"{msg_src} says \"{message}\""
-                        message_color = "cyan"
-                    elif action_type == "emote":
-                        formatted_message = f"{msg_src} {message}"
-                        message_color = "magenta"
-                        
-                    
-                    await character.send_message(
-                        MessageToCharacter(
-                            message=formatted_message,
-                            message_color=message_color,
-                            msg_src=msg_src
+                        await character.send_message(
+                            DialogMessage(
+                                content=message,
+                                from_character_name=msg_src
+                            )
                         )
-                    )
+                    elif action_type == "emote":
+                        await character.send_message(
+                            EmoteMessage(
+                                action=message,
+                                from_character_name=msg_src
+                            )
+                        )
                 except Exception as e:
                     print(f"Error sending message to {character_id}: {e}")
     

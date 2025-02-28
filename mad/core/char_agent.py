@@ -8,7 +8,7 @@ from pydantic_ai import Agent
 
 from .character import Character
 from .character_action import CharacterAction
-from ..networking.messages import MessageToCharacter
+from ..networking.messages import BaseMessage, DialogMessage
 from ..config import char_agent_model_instance
 from pydantic_ai.models.openai import OpenAIModel
 
@@ -36,7 +36,7 @@ class CharEvent:
     """Something that happened"""
     timestamp: int = field(default_factory=lambda: int(time.time()))
     action: ActionDecision | None = None
-    message: MessageToCharacter | None = None
+    message: BaseMessage | None = None
     idle_until_timestamp: int = field(default_factory=lambda: int(time.time() + 10))
 
 
@@ -116,7 +116,6 @@ class CharAgent(Character):
         # Check if we're still in idle period
         if current_time < last_event.idle_until_timestamp:
             time_left = last_event.idle_until_timestamp - current_time
-            print(f"[DEBUG] {self.name}: Still idling for {time_left:.1f} more seconds")
             return  # Do nothing during idle time
 
         # Idle period complete, run the agent to decide next action
@@ -157,7 +156,7 @@ class CharAgent(Character):
         self._state.events.append(event)
 
     
-    async def send_message(self, msg: MessageToCharacter) -> None:
+    async def send_message(self, msg: BaseMessage) -> None:
         """
         Send a message to the agent to be processed on the next tick.
         """
@@ -165,8 +164,8 @@ class CharAgent(Character):
         print(f"[DEBUG] {self.name}.send_message called: {msg.model_dump()}")
         
         # Store the message in the state to be handled on next tick
-        # Only process messages if they come from a different user and not the server
-        if msg.msg_src and msg.msg_src != self.name:
+        # Only process messages if they come from a different character/user and not the server
+        if isinstance(msg, DialogMessage) and msg.from_character_name != self.name:
             self._state.events.append(
                     CharEvent(
                         timestamp=time.time(),
@@ -235,18 +234,19 @@ You can see the following people, characters, or entities: {", ".join(state.room
 This is the recent history:
 """
     
-    # Include the last 5 events (or fewer if there aren't that many)
-    # Start from most recent and work backwards
-    recent_events = state.events[-10:] 
+    # Include the last 10 events (which will display in chronological order, oldest to newest)
+    recent_events = state.events[-10:]
     formatted_events = []
     current_time = time.time()
     
+    # Process events
     for event in recent_events:
         seconds_ago = int(current_time - event.timestamp)
         
         if event.message:
-            # Format message events
-            formatted_events.append(f"[{seconds_ago} seconds ago] {event.message.msg_src} said to you: \"{event.message.message}\"")
+            # Format message events based on type
+            if isinstance(event.message, DialogMessage):
+                formatted_events.append(f"[{seconds_ago} seconds ago] {event.message.from_character_name} said to you: \"{event.message.content}\"")
         elif event.action:
             # Format action events
             if hasattr(event.action, 'action_type'):
@@ -256,9 +256,6 @@ This is the recent history:
                     formatted_events.append(f"[{seconds_ago} seconds ago] You {event.action.message}")
                 elif event.action.action_type == "move":
                     formatted_events.append(f"[{seconds_ago} seconds ago] You moved to {event.action.direction}")
-    
-    # Reverse the events so most recent is last
-    formatted_events.reverse()
     
     # Add the formatted events to the result
     if formatted_events:

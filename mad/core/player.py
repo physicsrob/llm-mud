@@ -2,7 +2,7 @@ from typing import Literal
 from pydantic import Field
 from .character import Character
 from asyncio import Queue
-from ..networking.messages import MessageToCharacter
+from ..networking.messages import BaseMessage, SystemMessage
 from .command_parser import parse
 from .character_action import CharacterAction
 
@@ -14,7 +14,7 @@ class Player(Character):
 
     def __init__(self, name: str):
         super().__init__(name=name, id=name)
-        self._queue: Queue[MessageToCharacter] = Queue()
+        self._queue: Queue[BaseMessage] = Queue()
 
     def __aiter__(self):
         """Return self as an async iterator."""
@@ -31,7 +31,7 @@ class Player(Character):
         # the async iterator unless the queue is closed elsewhere
         return await self._queue.get()
 
-    async def send_message(self, msg: MessageToCharacter) -> None:
+    async def send_message(self, msg: BaseMessage) -> None:
         """Send a message to the player by adding it to the message queue."""
         await self._queue.put(msg)
 
@@ -40,11 +40,10 @@ class Player(Character):
         parse_result = await parse(world, self, command)
         if parse_result.error_msg:
             await self.send_message(
-                MessageToCharacter(
+                SystemMessage(
+                    content=parse_result.error_msg,
                     title="Error",
-                    title_color="red",
-                    message=parse_result.error_msg,
-                    message_color="red"
+                    severity="error"
                 )
             )
             return

@@ -390,48 +390,82 @@ document.addEventListener('DOMContentLoaded', () => {
                     term.write('\033[' + spacerRows + 'A');
                 }
                 
-                // Use typewriter effect for the message text
-                // If message is an object (JSON format), handle title and message separately
+                // Use typewriter effect for the message text based on message type
                 if (typeof message === 'object') {
-                    const { message: msgText, title, title_color, message_color, msg_src } = message;
-                    
-                    // ANSI color codes
+                    // Define constants for styling
                     const BOLD = "\x1b[1m";
                     const RESET = "\x1b[0m";
+                    const GREEN = "\x1b[32m";
+                    const BLUE = "\x1b[94m";
+                    const RED = "\x1b[31m";
+                    const CYAN = "\x1b[36m";
+                    const MAGENTA = "\x1b[35m";
                     
-                    // Handle title if provided
-                    if (title) {
-                        // Apply title color if provided
+                    // Add a newline before each message
+                    term.write('\r\n');
 
-                        const titleColorCode = title_color ? colorToAnsi(title_color) : '';
+                    // Process message based on its type
+                    if (message.message_type === "room") {
+                        // Room messages - green title, list characters and exits
+                        term.write(`${BOLD}${GREEN}${message.title}${RESET}\r\n`);
+                        await typeWriter(message.description);
                         
-                        // Apply formatting codes directly
-                        term.write('\r\n');
-                        term.write(`${BOLD}${titleColorCode}${title}${RESET}`);
-                        term.write('\r\n');
-
-                    } else {
-                        // Just add a newline for all messages without a title
-                        term.write('\r\n');
-                    }
-                    await new Promise(resolve => setTimeout(resolve, 1));
-                    
-                    // Handle message with optional color
-                    const messageColorCode = message_color ? colorToAnsi(message_color) : '';
-                    if (messageColorCode) {
-                        term.write(messageColorCode);
-                    }
-                    
-                    // Use typewriter for message text
-                    await typeWriter(msgText);
-                    
-                    // Reset formatting
-                    if (messageColorCode) {
-                        term.write(RESET);
-                        await new Promise(resolve => setTimeout(resolve, 1));
+                        // Display characters if present
+                        if (message.characters_present && message.characters_present.length > 0) {
+                            const charactersText = formatCharacterList(message.characters_present);
+                            term.write(`\r\n\r\nYou see ${charactersText} here.`);
+                        }
+                        
+                        // Display exits if present
+                        if (message.exits && message.exits.length > 0) {
+                            term.write(`\r\n\r\nExits: ${message.exits.join(', ')}`);
+                        }
+                    } 
+                    else if (message.message_type === "dialog") {
+                        // Dialog messages - cyan text
+                        term.write(`${CYAN}${message.from_character_name} says "${message.content}"${RESET}`);
+                    } 
+                    else if (message.message_type === "emote") {
+                        // Emote messages - magenta text
+                        term.write(`${MAGENTA}${message.from_character_name} ${message.action}${RESET}`);
+                    } 
+                    else if (message.message_type === "system") {
+                        // System messages - use severity to determine color
+                        let colorCode = BLUE;  // Default for info
+                        if (message.severity === "error") {
+                            colorCode = RED;
+                        } else if (message.severity === "warning") {
+                            colorCode = "\x1b[33m";  // Yellow
+                        }
+                        
+                        // If title exists, show it in bold
+                        if (message.title) {
+                            term.write(`${BOLD}${colorCode}${message.title}${RESET}\r\n`);
+                        }
+                        
+                        term.write(`${colorCode}${message.content}${RESET}`);
+                    } 
+                    else if (message.message_type === "movement") {
+                        // Movement messages - magenta text
+                        term.write(`${MAGENTA}${message.character_name} ${message.action}${RESET}`);
+                    } 
+                    else {
+                        // Unknown message format - log error and display generically
+                        console.error("Unknown message format:", message);
+                        term.write(`Unrecognized message format. Please report this bug.`);
                     }
                 } else {
                     await typeWriter(message);
+                }
+                
+                // Helper function to format character list
+                function formatCharacterList(characters) {
+                    if (characters.length === 0) return '';
+                    if (characters.length === 1) return characters[0];
+                    
+                    const lastChar = characters[characters.length - 1];
+                    const otherChars = characters.slice(0, -1).join(', ');
+                    return `${otherChars} and ${lastChar}`;
                 }
                 
                 // Restore original cursor settings
@@ -458,7 +492,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 // Debug message contents
                 console.log("Received message:", jsonMessage);
                 
-                // Add the original message to the queue with all properties intact
+                // Add the message to the queue
                 messageQueue.push(jsonMessage);
                 
                 // Start processing if not already doing so

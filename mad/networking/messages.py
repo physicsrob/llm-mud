@@ -1,24 +1,41 @@
 from enum import Enum
 from pydantic import BaseModel, Field
-from typing import Literal
+from typing import Literal, Any
 
-class MessageToCharacter(BaseModel):
-    """
-    A message to a character. Typically for display purposes.
+class BaseMessage(BaseModel):
+    """Base class for all messages to characters."""
+    message_type: str = Field(description="Discriminator field for message type")
+
+class RoomMessage(BaseMessage):
+    """Room description message."""
+    message_type: Literal["room"] = "room"
+    title: str  # Room name
+    description: str  # Room description
+    characters_present: list[str] = Field(default_factory=list)
+    exits: list[str] = Field(default_factory=list)
+
+class DialogMessage(BaseMessage):
+    """Character speech."""
+    message_type: Literal["dialog"] = "dialog"
+    content: str  # What was said
+    from_character_name: str  # Who said it
     
-    Instead of using message types with prefixes, we now use titles and colors
-    to clearly differentiate different types of messages.
-    """
+class EmoteMessage(BaseMessage):
+    """Character action/emote."""
+    message_type: Literal["emote"] = "emote"
+    action: str  # The action performed
+    from_character_name: str  # Who performed it
+    
+class SystemMessage(BaseMessage):
+    """System notification or information."""
+    message_type: Literal["system"] = "system"
+    content: str  # The system message
+    title: str | None = None  # Optional title
+    severity: Literal["info", "warning", "error"] = "info"
 
-    message: str
-    title: str | None = None
-    title_color: str | None = None  # Can be hex color like "#FF0000" or named color
-    message_color: str | None = None  # Can be hex color like "#FF0000" or named color
-    msg_src: str | None = Field(
-        description="The player or character who sent the message, otherwise None.",
-        default=None,
-    )
-    scroll: bool = Field(
-        description="Whether the client should scroll the terminal for this message.",
-        default=False,
-    )
+class MovementMessage(BaseMessage):
+    """Character movement notification."""
+    message_type: Literal["movement"] = "movement"
+    character_name: str  # Character that moved
+    direction: str | None = None  # Direction of movement if relevant
+    action: str  # "arrives", "leaves", etc.

@@ -1,6 +1,6 @@
 from typing import Literal
 from pydantic import BaseModel, Field
-from ..networking.messages import MessageToCharacter
+from ..networking.messages import BaseMessage
 
 
 class Character(BaseModel):
@@ -13,7 +13,7 @@ class Character(BaseModel):
     async def tick(self) -> None:
         pass
         
-    async def send_message(self, msg: MessageToCharacter) -> None:
+    async def send_message(self, msg: BaseMessage) -> None:
         """
         Send a message to the character.
         
