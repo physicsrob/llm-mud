@@ -410,12 +410,9 @@ document.addEventListener('DOMContentLoaded', () => {
                         term.write(`${BOLD}${titleColorCode}${title}${RESET}`);
                         term.write('\r\n');
 
-                    } else if (msg_src) {
-                        // If no title but there is a source, add the source as a prefix
+                    } else {
+                        // Just add a newline for all messages without a title
                         term.write('\r\n');
-                        term.write(`${BOLD}`);
-                        await typeWriter(msg_src);
-                        term.write(`${RESET}: `);
                     }
                     await new Promise(resolve => setTimeout(resolve, 1));
                     
@@ -457,6 +454,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 
                 // Parse JSON message
                 const jsonMessage = JSON.parse(event.data);
+                
+                // Debug message contents
+                console.log("Received message:", jsonMessage);
                 
                 // Add the original message to the queue with all properties intact
                 messageQueue.push(jsonMessage);

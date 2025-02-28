@@ -1,13 +1,17 @@
 import asyncio
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
+from typing import Annotated
 from pathlib import Path
 from collections import defaultdict
 
 from mad.core.character import Character
 from mad.core.character_action import CharacterAction
 from mad.core.player import Player
+from mad.core.char_agent import CharAgent
 from mad.core.room import Room
 from mad.networking.messages import MessageToCharacter
+
+CharType = Annotated[Player | CharAgent, Field(discriminator='type')]
 
 
 class World(BaseModel):
@@ -29,9 +33,17 @@ class World(BaseModel):
     room_characters: dict[str, list[str]] = Field(
         default_factory=lambda: {}
     )  # room_id -> [character_ids]
-    characters: dict[str, Character] = Field(
-        default_factory=dict
+    characters: dict[str, CharType] = Field(
+        default_factory=dict,
     )  # character_id -> Character object
+
+    @model_validator(mode='after')
+    def init(self):
+        for char_id, char in self.characters.items():
+            if isinstance(char, CharAgent):
+                print(f"Initializing {char_id}")
+                char.init(self)
+        return self
 
     def create_room(self, room: Room) -> None:
         """Add a room to the world."""
@@ -146,6 +158,37 @@ class World(BaseModel):
             exclude_character_id=player.id
         )
 
+        # Welcome message with world info
+        welcome_message = f"Welcome to {self.title}!"
+        # Use the scroll flag for this important message
+        await player.send_message(
+            MessageToCharacter(
+                title=welcome_message,
+                title_color="blue",
+                message=self.brief_description,
+                scroll=False
+            )
+        )
+
+        # Show current room
+        current_room = self.get_character_room(player.id)
+
+        # Get characters in the room excluding the player
+        characters_in_room = self.get_characters_in_room(current_room.id, player.id)
+        
+        # Build the room description including characters
+        room_desc = current_room.brief_describe()
+        room_desc += self.format_characters_text(characters_in_room)
+        
+        # Send initial room description to player
+        await player.send_message(
+            MessageToCharacter(
+                title=current_room.title,
+                title_color="green",
+                message=room_desc
+            )
+        )
+
         return player
 
     async def logout_player(self, player: Player) -> None:
@@ -202,32 +245,29 @@ class World(BaseModel):
                     )
                 )
             else:
+                # Get characters in the room excluding the current character
+                characters_in_room = self.get_characters_in_room(room.id, character.id)
+                
+                # Build the room description including characters
+                room_desc = room.brief_describe()
+                room_desc += self.format_characters_text(characters_in_room)
+                
                 await character.send_message(
                     MessageToCharacter(
                         title=room.title,
                         title_color="green",
-                        message=room.brief_describe()
+                        message=room_desc
                     )
                 )
         elif action.action_type == "look":
             room = self.get_character_room(character.id)
             if room:
                 # Get characters in the room excluding the current character
-                characters_in_room = []
-                if room.id in self.room_characters:
-                    for char_id in self.room_characters[room.id]:
-                        if char_id != character.id and char_id in self.characters:
-                            characters_in_room.append(self.characters[char_id].name)
+                characters_in_room = self.get_characters_in_room(room.id, character.id)
                 
                 # Build the room description including characters
                 room_desc = room.describe()
-                if characters_in_room:
-                    if len(characters_in_room) == 1:
-                        room_desc += f"\n\nYou see {characters_in_room[0]} here."
-                    else:
-                        last_char = characters_in_room.pop()
-                        chars_text = f"{', '.join(characters_in_room)} and {last_char}"
-                        room_desc += f"\n\nYou see {chars_text} here."
+                room_desc += self.format_characters_text(characters_in_room)
                 
                 # Set scroll to true for room descriptions
                 await character.send_message(
@@ -247,6 +287,42 @@ class World(BaseModel):
                     action.message, 
                     msg_src=character.name
                 )
+
+    def get_characters_in_room(self, room_id: str, exclude_character_id: str | None = None) -> list[str]:
+        """Get names of characters in a specific room.
+        
+        Args:
+            room_id: The ID of the room to check
+            exclude_character_id: Optional character ID to exclude from the list
+            
+        Returns:
+            A list of character names in the room
+        """
+        characters_in_room = []
+        if room_id in self.room_characters:
+            for char_id in self.room_characters[room_id]:
+                if (exclude_character_id is None or char_id != exclude_character_id) and char_id in self.characters:
+                    characters_in_room.append(self.characters[char_id].name)
+        return characters_in_room
+
+    def format_characters_text(self, characters: list[str]) -> str:
+        """Format a list of character names for display.
+        
+        Args:
+            characters: List of character names
+            
+        Returns:
+            Formatted text describing characters present
+        """
+        if not characters:
+            return ""
+            
+        if len(characters) == 1:
+            return f"\n\nYou see {characters[0]} here."
+        else:
+            last_char = characters.pop()
+            chars_text = f"{', '.join(characters)} and {last_char}"
+            return f"\n\nYou see {chars_text} here."
 
     async def broadcast_to_room(
         self, 
@@ -280,11 +356,12 @@ class World(BaseModel):
                     
                     # Format based on action type
                     if action_type == "say":
-                        formatted_message = f"{msg_src} says: {message}"
+                        formatted_message = f"{msg_src} says \"{message}\""
                         message_color = "cyan"
                     elif action_type == "emote":
                         formatted_message = f"{msg_src} {message}"
                         message_color = "magenta"
+                        
                     
                     await character.send_message(
                         MessageToCharacter(

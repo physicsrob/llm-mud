@@ -9,7 +9,7 @@
 
 ## Code Style
 - Python >= 3.10 with type hints
-- Type annotations using Python 3.9+ style. Use built-in types like list and tuple directly rather than importing from typing. Use "|None" instead of Optional, etc.
+- Type annotations using Python 3.10+ style. Never use Union, List, Tuple, or Dict from typing module. Use built-in types like list and tuple directly, and use the pipe operator for unions (e.g., `str | None`).
 - Thorough and professional comments
 - Imports: standard library first, then project imports
 - Naming: snake_case for variables/functions, PascalCase for classes
@@ -20,3 +20,7 @@
 - Architecture: Clean separation between client/server components
 - Modules: Organize by functionality (core, networking, gen)
 - CLI: Use Click library for command interfaces
+
+## Git Workflow
+- Never add files to git unless explicitly asked
+- Never create a git commit unless explicitly asked

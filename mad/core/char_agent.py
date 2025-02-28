@@ -1,6 +1,7 @@
+from __future__ import annotations
 from dataclasses import dataclass, field
 import time
-from typing import TYPE_CHECKING, Literal, Union, List
+from typing import TYPE_CHECKING, Literal
 
 from pydantic import BaseModel, Field
 from pydantic_ai import Agent
@@ -8,7 +9,7 @@ from pydantic_ai import Agent
 from .character import Character
 from .character_action import CharacterAction
 from ..networking.messages import MessageToCharacter
-from ..config import creative_model, OPENROUTER_BASE_URL, OPENROUTER_API_KEY
+from ..config import char_agent_model_instance
 from pydantic_ai.models.openai import OpenAIModel
 
 if TYPE_CHECKING:
@@ -18,75 +19,10 @@ if TYPE_CHECKING:
 # Configure global idle times
 empty_room_extra_idle = 60  # Extra idle time when no players are in the room
 
-
-# Agent prompt that guides character behavior
-agent_prompt = """
-You are a non-player character in a text adventure game. Your role is to behave like a realistic inhabitant 
-of this world, making decisions about what actions to take based on your surroundings and events.
-
-You must choose an action based on your current situation:
-1. Say something to others in the room using the Say action
-2. Perform an emote (like "waves" or "looks around") using the Emote action
-3. Move to a connected room using the Move action
-4. Idle for a period of time when appropriate
-
-When deciding what to do:
-- Consider your current location and who else is present
-- Respond appropriately to messages from other characters
-- Be somewhat unpredictable but believable in your behaviors
-- Don't just repeat the same actions over and over
-- Perform actions that make sense for your character and the setting
-- Act in accordance with your personality and goals
-
-Every action should include an idle duration (how long to pause before the next action):
-- Short duration (5-20 seconds) for quick responses or when actively engaged
-- Medium duration (20-45 seconds) for normal activities
-- Long duration (45-90 seconds) for when less active or when little is happening
-
-Return your decision as a structured action object, either:
-- A CharacterAction (for say, emote, or move) plus an idle duration
-- An IdleAction (to wait quietly for a while)
-
-Be thoughtful about your choices based on the context provided.
-"""
-
-
-class TriggerType(BaseModel):
-    """The reason the agent is being called"""
-    reason: Literal["idle_complete", "message_received"]
-
-
-class AgentContext(BaseModel):
-    """Context provided to the agent for decision making"""
-    character_name: str = Field(description="The name of this character")
-    brief_description: str = Field(description="Brief description of this character")
-    personality: str = Field(description="The character's personality")
-    goals: str = Field(description="The character's goals")
-    room_id: str = Field(description="ID of the current room")
-    room_title: str = Field(description="Title of the current room")
-    room_description: str = Field(description="Description of the current room")
-    room_exits: list[str] = Field(description="List of available exit directions")
-    room_characters: list[str] = Field(description="Other characters in the room")
-    trigger: TriggerType = Field(description="What triggered this agent run")
-    message: MessageToCharacter | None = Field(
-        description="The message received, if trigger was message_received",
-        default=None
-    )
-
-
-class IdleAction(BaseModel):
-    """Action to idle for a period of time"""
-    duration: int = Field(
-        description="How long to idle for in seconds",
-        ge=5,
-        le=90
-    )
-
-
 class ActionDecision(BaseModel):
     """The agent's decision about what action to take"""
-    action: Union[CharacterAction, IdleAction] = Field(
-        description="The action to perform"
+    action: CharacterAction | None = Field(
+        description="The action to perform, or None for idle"
     )
     idle_duration: int = Field(
         description="How long to wait before next action in seconds",
@@ -95,63 +31,58 @@ class ActionDecision(BaseModel):
         default=10
     )
 
+@dataclass
+class CharEvent:
+    """Something that happened"""
+    timestamp: int = field(default_factory=lambda: int(time.time()))
+    action: ActionDecision | None = None
+    message: MessageToCharacter | None = None
+    idle_until_timestamp: int = field(default_factory=lambda: int(time.time() + 10))
+
 
 @dataclass
 class CharAgentState:
     """State for the character agent."""
-    last_message: MessageToCharacter | None = None
+    events: list[CharEvent] = field(default_factory=list)
     room_id: str = ""
     room_title: str = ""
     room_description: str = ""
-    room_exits: List[str] = field(default_factory=list)
-    room_characters: List[str] = field(default_factory=list)
+    room_exits: list[str] = field(default_factory=list)
+    room_characters: list[str] = field(default_factory=list)
 
 
 class CharAgent(Character):
     """An agent-based character that can interact with the world autonomously."""
     
-    brief_description: str = Field(
-        description="A brief description of the character",
-        default=""
-    )
-    personality: str = Field(
-        description="A paragraph describing the character's personality",
-        default=""
-    )
-    goals: str = Field(
-        description="Character's goals and motivations",
-        default=""
-    )
+    type: Literal["CharAgent"] = Field(default="CharAgent")
     
-    def __init__(self, name: str, world: "World", brief_description: str = "", 
-                 personality: str = "", goals: str = ""):
-        super().__init__(name=name, id=f"agent_{name}")
-        
-        # Set character traits
-        self.brief_description = brief_description
-        self.personality = personality
-        self.goals = goals
-        
+    brief_description: str = Field(
+        description="A brief description of what a player might see if they looked at the character. This should be in the third person.",
+        default=""
+    )
+    internal_description: str = Field(
+        description="A short description of the character. This should be in the second person. 'You are ...'",
+        default=""
+    )
+    internal_personality: str = Field(
+        description="A paragraph describing the character's personality. This should be in the second person. 'You are ...'",
+        default=""
+    )
+    internal_goals: str = Field(
+        description="The character's goals and motivations. This should be in the second person, e.g. 'You are trying ...'. Only the character knows their own goals.",
+        default=""
+    )
+   
+    def init(self, world: "World"):
         # Initialize attributes with underscore prefix to exclude from serialization
-        self._state = CharAgentState()
         self._world = world
-        self._idle_until = time.time() + 10
+        self._state = CharAgentState()
+        self._state.events.append(CharEvent(idle_until_timestamp=time.time()+5))
         
-        # Initialize the agent
-        model = OpenAIModel(
-            creative_model,
-            base_url=OPENROUTER_BASE_URL,
-            api_key=OPENROUTER_API_KEY,
-        )
-        self._agent = Agent(
-            model=model,
-            result_type=ActionDecision,
-            system_prompt=agent_prompt,
-            retries=2,
-            model_settings={"temperature": 0.7},
-        )
-        
-    async def _update_room_info(self) -> None:
+        # Initialize room info
+        self._update_room_info()
+
+    def _update_room_info(self) -> None:
         """Update the agent's knowledge about the current room."""
         room = self._world.get_character_room(self.id)
         if not room:
@@ -178,117 +109,164 @@ class CharAgent(Character):
         
         This performs one action based on current state.
         """
-        # Update room info at the start of each tick
-        await self._update_room_info()
-        
-        # If there's a message to respond to, handle it first
-        if self._state.last_message:
-            message = self._state.last_message
-            self._state.last_message = None
-            print(f"[DEBUG] {self.name}: Processing message {message}")
-            await self._run_agent_for_message(message)
-            return
-            
-        # Check if we're still in idle period
+
+        last_event = self._state.events[-1]
         current_time = time.time()
-        if current_time < self._idle_until:
-            time_left = self._idle_until - current_time
+        
+        # Check if we're still in idle period
+        if current_time < last_event.idle_until_timestamp:
+            time_left = last_event.idle_until_timestamp - current_time
             print(f"[DEBUG] {self.name}: Still idling for {time_left:.1f} more seconds")
             return  # Do nothing during idle time
-        
+
         # Idle period complete, run the agent to decide next action
-        print(f"[DEBUG] {self.name}: Idle time complete, deciding next action")
-        await self._run_agent_for_idle()
-    
-    async def _run_agent_for_idle(self) -> None:
-        """Run the agent when idle timer completes"""
-        # Prepare context for the agent
-        context = AgentContext(
-            character_name=self.name,
-            brief_description=self.brief_description,
-            personality=self.personality,
-            goals=self.goals,
-            room_id=self._state.room_id,
-            room_title=self._state.room_title,
-            room_description=self._state.room_description,
-            room_exits=self._state.room_exits,
-            room_characters=self._state.room_characters,
-            trigger=TriggerType(reason="idle_complete")
-        )
+        print(f"[DEBUG] {self.name}: Deciding next action")
+   
+        # Debug the incoming message
+        if last_event.message:
+            print(f"[DEBUG] {self.name}: Received message: {last_event.message.model_dump()}")
         
+        # Create the prompt based on the trigger reason
+        prompt = "Decide what to do next."
+
         # Run the agent
-        result = await self._agent.run(
-            f"Decide what to do next. Choose an appropriate action for the current situation.\n\nContext: {context.model_dump_json()}"
-        )
+        result = await char_agent_actor.run(prompt, deps=self)
+        decision:ActionDecision = result.data
         
         # Debug the response from the agent
-        print(f"[DEBUG] {self.name}: Agent response: {result.data}")
+        print(f"[DEBUG] {self.name}: Agent response: {decision}")
         
-        # Process the result
-        await self._process_action_decision(result.data)
-    
-    async def _run_agent_for_message(self, message: MessageToCharacter) -> None:
-        """Run the agent when a message is received"""
-        # Prepare context for the agent
-        context = AgentContext(
-            character_name=self.name,
-            brief_description=self.brief_description,
-            personality=self.personality,
-            goals=self.goals,
-            room_id=self._state.room_id,
-            room_title=self._state.room_title,
-            room_description=self._state.room_description,
-            room_exits=self._state.room_exits,
-            room_characters=self._state.room_characters,
-            trigger=TriggerType(reason="message_received"),
-            message=message
-        )
-        
-        # Run the agent
-        result = await self._agent.run(
-            f"Decide how to respond to this message. Choose an appropriate action based on the message content.\n\nContext: {context.model_dump_json()}"
-        )
-        
-        # Debug the response from the agent
-        print(f"[DEBUG] {self.name}: Agent response to message: {result.data}")
-        
-        # Process the result
-        await self._process_action_decision(result.data)
-    
-    async def _process_action_decision(self, decision: ActionDecision) -> None:
-        """Process the action decision from the agent"""
-        action = decision.action
-        
-        # Check if it's an idle action
-        if isinstance(action, IdleAction):
-            idle_duration = action.duration
-            print(f"[DEBUG] {self.name}: Idle action with duration {idle_duration} seconds")
-            self._idle_until = time.time() + idle_duration
-            return
-        
-        # Otherwise, it's a character action
-        print(f"[DEBUG] {self.name}: Performing {action.action_type} action")
-        await self._world.process_character_action(self, action)
-        
-        # Apply idle time specified by the agent
-        idle_time = decision.idle_duration
-        print(f"[DEBUG] {self.name}: Base idle duration: {idle_time} seconds")
-        
+        if decision.action:
+            await self._world.process_character_action(self, decision.action)
+            # Update room info after the action (especially important for movement)
+            self._update_room_info()
+
         # Check if room has any players, if not add extra idle time
+        idle_time = decision.idle_duration
         room = self._world.get_character_room(self.id)
         if room and not self._world.room_has_players(room.id):
             print(f"[DEBUG] {self.name}: No players in room, adding extra {empty_room_extra_idle} seconds")
             idle_time += empty_room_extra_idle
-        else:
-            print(f"[DEBUG] {self.name}: Players in room, using normal idle time")
-                
-        # Set idle time for next action
-        print(f"[DEBUG] {self.name}: Total idle time: {idle_time} seconds")
-        self._idle_until = time.time() + idle_time
+
+        event = CharEvent(
+            timestamp=time.time(),
+            action=decision.action,
+            message=None,
+            idle_until_timestamp=time.time() + idle_time 
+        )
+        self._state.events.append(event)
+
     
     async def send_message(self, msg: MessageToCharacter) -> None:
         """
         Send a message to the agent to be processed on the next tick.
         """
+        # Debug incoming messages
+        print(f"[DEBUG] {self.name}.send_message called: {msg.model_dump()}")
+        
         # Store the message in the state to be handled on next tick
-        self._state.last_message = msg
+        # Only process messages if they come from a different user and not the server
+        if msg.msg_src and msg.msg_src != self.name:
+            self._state.events.append(
+                    CharEvent(
+                        timestamp=time.time(),
+                        action=None,
+                        message=msg,
+                        idle_until_timestamp=time.time()  # Process immediately
+                    )
+            )
+
+# Global agent instance that all character agents will share
+char_agent_actor = Agent(
+    model=char_agent_model_instance,
+    result_type=ActionDecision,
+    deps_type=CharAgent,
+    retries=2,
+    model_settings={"temperature": 0.7},
+)
+
+@char_agent_actor.system_prompt
+def main_prompt(ctx) -> str:
+    char_agent:CharAgent = ctx.deps
+    return f"""\
+You are {char_agent.name}. {char_agent.internal_description}
+
+{char_agent.internal_personality}
+
+{char_agent.internal_goals}
+
+You must choose an action based on your current situation:
+1. Say something to others in the room using the Say action
+2. Perform an emote (like "waves" or "looks around") using the Emote action
+3. Move to a connected room using the Move action
+4. Idle for a period of time when appropriate
+
+When deciding what to do:
+- Consider your current location and who else is present
+- Respond appropriately to messages from other characters
+- Engage and explore
+- Be yourself
+
+Every action should include an idle duration (how long to pause before the next action):
+- Short duration (5-20 seconds) for quick responses or when actively engaged
+- Medium duration (20-45 seconds) for normal activities
+- Long duration (45-90 seconds) for when less active or when little is happening
+
+Return your decision as a structured action object, either:
+- A CharacterAction (for say, emote, or move) plus an idle duration
+- An IdleAction (to wait quietly for a while)
+
+Be thoughtful about your choices based on the context provided.
+        """
+
+
+@char_agent_actor.system_prompt
+def context_prompt(ctx) -> str:
+    char_agent:CharAgent = ctx.deps
+    state:CharAgentState = char_agent._state
+
+    result = f"""\
+You are currently located at "{state.room_title}": {state.room_description}
+
+You can see the following exits: {", ".join(state.room_exits)}
+
+You can see the following people, characters, or entities: {", ".join(state.room_characters)}
+
+This is the recent history:
+"""
+    
+    # Include the last 5 events (or fewer if there aren't that many)
+    # Start from most recent and work backwards
+    recent_events = state.events[-10:] 
+    formatted_events = []
+    current_time = time.time()
+    
+    for event in recent_events:
+        seconds_ago = int(current_time - event.timestamp)
+        
+        if event.message:
+            # Format message events
+            formatted_events.append(f"[{seconds_ago} seconds ago] {event.message.msg_src} said to you: \"{event.message.message}\"")
+        elif event.action:
+            # Format action events
+            if hasattr(event.action, 'action_type'):
+                if event.action.action_type == "say":
+                    formatted_events.append(f"[{seconds_ago} seconds ago] You said: \"{event.action.message}\"")
+                elif event.action.action_type == "emote":
+                    formatted_events.append(f"[{seconds_ago} seconds ago] You {event.action.message}")
+                elif event.action.action_type == "move":
+                    formatted_events.append(f"[{seconds_ago} seconds ago] You moved to {event.action.direction}")
+    
+    # Reverse the events so most recent is last
+    formatted_events.reverse()
+    
+    # Add the formatted events to the result
+    if formatted_events:
+        result += "\n" + "\n".join(formatted_events)
+    else:
+        result += "\nNo recent activity."
+   
+    print(result)
+    return result
+
+

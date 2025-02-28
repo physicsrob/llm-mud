@@ -10,26 +10,13 @@ from mad.gen.data_model import WorldDescription
 from mad.config import creative_model, OPENROUTER_BASE_URL, OPENROUTER_API_KEY
 
 
-class CharacterDescription(BaseModel):
-    """Detailed character description for creating an NPC."""
-    name: str = Field(description="The character's name")
-    brief_description: str = Field(
-        description="A brief one-line description of the character's appearance"
-    )
-    personality: str = Field(
-        description="A paragraph describing the character's personality traits and behaviors"
-    )
-    goals: str = Field(
-        description="The character's goals and motivations in a few sentences"
-    )
-
-
 class CharacterGenerationContext(BaseModel):
     """Context information for generating a character."""
     world_title: str = Field(description="The title of the game world")
     world_description: str = Field(description="Brief description of the game world")
     room_title: str = Field(description="The title of the room where character lives")
     room_description: str = Field(description="Description of the room where character lives")
+    existing_char_descriptions: list[str] = Field(description="A list of existing characters in the world")
 
 
 # The prompt that guides character generation
@@ -50,13 +37,14 @@ The character should:
 - Have a personality that drives interesting interactions
 - Avoid generic or clichéd characterizations
 - Have some depth or complexity to them
+- Be unique from other characters already created
 
 Design a character that players would enjoy interacting with and who adds to the richness of the game world.
 """
 
 
 async def create_character_agent(
-    world_desc: WorldDescription, room: Room, world: "World"
+    world_desc: WorldDescription, room: Room, world: "World", existing_chars: list[CharAgent]
 ) -> CharAgent:
     """
     Create a character agent based on the world and room descriptions.
@@ -78,7 +66,7 @@ async def create_character_agent(
     
     generation_agent = Agent(
         model=model,
-        result_type=CharacterDescription,
+        result_type=CharAgent,
         system_prompt=character_gen_prompt,
         retries=2,
         model_settings={"temperature": 0.8},
@@ -89,7 +77,8 @@ async def create_character_agent(
         world_title=world_desc.title,
         world_description=world_desc.brief_description,
         room_title=room.title,
-        room_description=room.brief_description
+        room_description=room.brief_description,
+        existing_char_descriptions = [char.brief_description for char in existing_chars]
     )
     
     # Run the agent to generate character description
@@ -97,15 +86,8 @@ async def create_character_agent(
         f"Create a unique character that fits in this location and world.\n\nContext: {context.model_dump_json()}"
     )
     
-    char_desc = result.data
-    
-    # Create and return the character agent
-    char_agent = CharAgent(
-        name=char_desc.name,
-        world=world,
-        brief_description=char_desc.brief_description,
-        personality=char_desc.personality,
-        goals=char_desc.goals
-    )
-    
+    char_agent = result.data
+    char_agent.init(world)
+
     return char_agent
+

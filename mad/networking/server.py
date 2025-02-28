@@ -48,21 +48,6 @@ class Server:
         """
         world = World.load(world_file)
         
-        # Add a CharAgent to the starting room
-        from ..core.char_agent import CharAgent
-        
-        # Create a new character agent named "Guide"
-        guide = CharAgent(name="Guide", world=world)
-        
-        # Add the agent to the characters dictionary
-        world.characters[guide.id] = guide
-        
-        # Add the agent to the starting room
-        if world.starting_room_id:
-            if not world.starting_room_id in world.room_characters:
-                world.room_characters[world.starting_room_id] = []
-            world.room_characters[world.starting_room_id].append(guide.id)
-        
         return cls(world, serve_web)
 
     def setup_routes(self):
@@ -213,29 +198,6 @@ class Server:
             # Set up player output task
             output_task = asyncio.create_task(self._handle_client_output(player, ws))
             
-            # Welcome message with world info
-            welcome_message = f"Welcome to {self.world.title}!"
-            # Use the scroll flag for this important message
-            await player.send_message(
-                MessageToCharacter(
-                    title=welcome_message,
-                    title_color="blue",
-                    message=self.world.brief_description,
-                    scroll=False
-                )
-            )
-
-            # Show current room
-            current_room = self.world.get_character_room(player.id)
-            if current_room:
-                await player.send_message(
-                    MessageToCharacter(
-                        title=current_room.title,
-                        title_color="green",
-                        message=current_room.brief_describe()
-                    )
-                )
-
             # Handle incoming messages
             async for msg in ws:
                 if msg.type == WSMsgType.TEXT:

@@ -1,3 +1,5 @@
+from typing import Literal
+from pydantic import Field
 from .character import Character
 from asyncio import Queue
 from ..networking.messages import MessageToCharacter
@@ -7,6 +9,8 @@ from .character_action import CharacterAction
 
 class Player(Character):
     """Represents a player character in the game."""
+    
+    type: Literal["Player"] = Field(default="Player")
 
     def __init__(self, name: str):
         super().__init__(name=name, id=name)

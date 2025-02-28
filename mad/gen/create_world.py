@@ -133,8 +133,10 @@ async def create_world(theme: str, room_count: int = 10) -> World:
     
     # Create one character for each room and place them in their rooms
     print("\nGenerating characters for each room...")
+    chars = []
+
     for room_id, room in rooms.items():
-        character = await create_character_agent(world_desc, room, world)
+        character = await create_character_agent(world_desc, room, world, chars)
         
         # Add character to the world
         world.characters[character.id] = character
@@ -143,6 +145,7 @@ async def create_world(theme: str, room_count: int = 10) -> World:
         if room_id not in world.room_characters:
             world.room_characters[room_id] = []
         world.room_characters[room_id].append(character.id)
+        chars.append(character)
         
         print(f"Created character '{character.name}' in room '{room.title}'")
     

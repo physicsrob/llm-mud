@@ -1,4 +1,5 @@
-from pydantic import BaseModel
+from typing import Literal
+from pydantic import BaseModel, Field
 from ..networking.messages import MessageToCharacter
 
 
@@ -7,6 +8,7 @@ class Character(BaseModel):
 
     id: str
     name: str
+    type: Literal["Character"]  # Discriminator field for character type
 
     async def tick(self) -> None:
         pass
