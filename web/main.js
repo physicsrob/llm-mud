@@ -363,6 +363,9 @@ document.addEventListener('DOMContentLoaded', () => {
             
             processingMessages = true;
             
+            // Save current command and cursor position
+            const savedCommand = commandBuffer;
+            
             while (messageQueue.length > 0) {
                 const message = messageQueue.shift();
                 
@@ -486,13 +489,21 @@ document.addEventListener('DOMContentLoaded', () => {
                 term.options.cursorStyle = originalCursorStyle;
                 term.options.cursorBlink = originalCursorBlink;
                 term.write('\r\n> ');
-                
-                // Ensure terminal has focus when displaying the prompt
-                term.focus();
             }
             
+            // Restore the user's command if they were typing something
+            if (savedCommand) {
+                // Write the saved command back to the terminal
+                term.write(savedCommand);
+                // Keep the command buffer the same
+                commandBuffer = savedCommand;
+            } else {
+                commandBuffer = '';
+            }
+            
+            // Ensure terminal has focus
+            term.focus();
             processingMessages = false;
-            commandBuffer = '';
         }
         
         socket.onmessage = (event) => {

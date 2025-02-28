@@ -222,9 +222,12 @@ class World(BaseModel):
             # Handle any exceptions that occurred
             for i, result in enumerate(results):
                 if isinstance(result, Exception):
+                    import traceback
                     character_id = list(self.characters.keys())[i]
                     character_name = self.characters[character_id].name
                     print(f"Error in tick() for character {character_name} ({character_id}): {result}")
+                    print(f"Stacktrace for {character_name}:")
+                    traceback.print_exception(type(result), result, result.__traceback__)
                     # Consider additional error handling like removing crashed characters
                     # or sending admin notifications for persistent issues
 
