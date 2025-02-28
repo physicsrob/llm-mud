@@ -1,12 +1,7 @@
 import os
 from pydantic_ai.models.openai import OpenAIModel
 
-# Model configuration for command parser
-command_parser_model = "anthropic/claude-3.5-haiku"
-# command_parser_model = "mistralai/mistral-nemo"
-# command_parser_model = "deepseek/deepseek-chat"
-# command_parser_model = "microsoft/phi-4" # DOESNT WORK
-# creative_model = "gryphe/mythomax-l2-13b" # DOESNT SUPPORT TOOL
+# Model configuration
 creative_model = "anthropic/claude-3.5-sonnet"
 char_agent_model = "anthropic/claude-3.5-sonnet"
 
