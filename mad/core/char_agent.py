@@ -1,4 +1,5 @@
 from __future__ import annotations
+from devtools import debug
 from dataclasses import dataclass, field
 import time
 from typing import TYPE_CHECKING, Literal
@@ -8,7 +9,7 @@ from pydantic_ai import Agent
 
 from .character import Character
 from .character_action import CharacterAction
-from ..networking.messages import BaseMessage, DialogMessage
+from ..networking.messages import BaseMessage, DialogMessage, EmoteMessage, MovementMessage
 from ..config import char_agent_model_instance
 from pydantic_ai.models.openai import OpenAIModel
 
@@ -19,14 +20,11 @@ if TYPE_CHECKING:
 # Configure global idle times
 empty_room_extra_idle = 60  # Extra idle time when no players are in the room
 
-class ActionDecision(BaseModel):
+class ActionDecision(CharacterAction):
     """The agent's decision about what action to take"""
-    action: CharacterAction | None = Field(
-        description="The action to perform, or None for idle"
-    )
     idle_duration: int = Field(
         description="How long to wait before next action in seconds",
-        ge=5,
+        ge=0,
         le=90,
         default=10
     )
@@ -34,10 +32,55 @@ class ActionDecision(BaseModel):
 @dataclass
 class CharEvent:
     """Something that happened"""
-    timestamp: int = field(default_factory=lambda: int(time.time()))
+    timestamp: float = field(default_factory=lambda: time.time())
     action: ActionDecision | None = None
     message: BaseMessage | None = None
-    idle_until_timestamp: int = field(default_factory=lambda: int(time.time() + 10))
+    idle_until_timestamp: float = field(default_factory=lambda: time.time() + 10.0)
+    
+    def format_message_event(self, current_time: float) -> str:
+        """Format a message event for display in the agent prompt."""
+        if not self.message:
+            return ""
+        
+        seconds_ago = int(current_time - self.timestamp)
+        
+        if isinstance(self.message, DialogMessage):
+            return f"[{seconds_ago} seconds ago] {self.message.from_character_name} said to you: \"{self.message.content}\""
+        elif isinstance(self.message, EmoteMessage):
+            return f"[{seconds_ago} seconds ago] {self.message.from_character_name} {self.message.action}"
+        elif isinstance(self.message, MovementMessage):
+            direction_text = f" {self.message.direction}" if self.message.direction else ""
+            if self.message.action == "arrives":
+                return f"[{seconds_ago} seconds ago] {self.message.character_name} arrives{' from' + direction_text if direction_text else ''}"
+            elif self.message.action == "leaves":
+                return f"[{seconds_ago} seconds ago] {self.message.character_name} leaves{' to' + direction_text if direction_text else ''}"
+        return ""
+    
+    def format_action_event(self, current_time: float) -> str:
+        """Format an action event for display in the agent prompt."""
+        if not self.action:
+            return ""
+            
+        seconds_ago = int(current_time - self.timestamp)
+        action_type = self.action.action_type
+        
+        if action_type == "say":
+            return f"[{seconds_ago} seconds ago] You said: \"{self.action.message}\""
+        elif action_type == "emote":
+            return f"[{seconds_ago} seconds ago] You {self.action.message}"
+        elif action_type == "move":
+            return f"[{seconds_ago} seconds ago] You moved to {self.action.direction}"
+        elif action_type == "idle":
+            return f"[{seconds_ago} seconds ago] You waited quietly"
+        return ""
+    
+    def format_event(self, current_time: float) -> str:
+        """Format the event for display in the agent prompt."""
+        if self.message:
+            return self.format_message_event(current_time)
+        elif self.action:
+            return self.format_action_event(current_time)
+        return ""
 
 
 @dataclass
@@ -49,6 +92,33 @@ class CharAgentState:
     room_description: str = ""
     room_exits: list[str] = field(default_factory=list)
     room_characters: list[str] = field(default_factory=list)
+    last_processed_timestamp: float = field(default_factory=time.time)
+    
+    def get_new_events(self) -> list[CharEvent]:
+        """Get events that have occurred since the last processing."""
+        return [e for e in self.events if e.timestamp >= self.last_processed_timestamp]
+        
+    def get_old_events(self, max_events: int = 10) -> list[CharEvent]:
+        """Get the most recent previously processed events up to max_events."""
+        old_events = [e for e in self.events if e.timestamp < self.last_processed_timestamp]
+        return old_events[-max_events:] if old_events else []
+        
+    def should_idle(self) -> bool:
+        """
+        Determine if the agent should continue idling based on all events.
+        
+        Returns:
+            bool: True if agent should remain idle, False if agent should process events
+        """
+        current_time = time.time()
+        events = self.get_new_events()
+        assert len(events), "There should always be new events yet to be processed"
+        
+        for event in events:
+            if current_time >= event.idle_until_timestamp:
+                return False
+            
+        return True
 
 
 class CharAgent(Character):
@@ -77,7 +147,9 @@ class CharAgent(Character):
         # Initialize attributes with underscore prefix to exclude from serialization
         self._world = world
         self._state = CharAgentState()
-        self._state.events.append(CharEvent(idle_until_timestamp=time.time()+5))
+        current_time = time.time()
+        self._state.events.append(CharEvent(idle_until_timestamp=current_time+5))
+        self._state.last_processed_timestamp = current_time
         
         # Initialize room info
         self._update_room_info()
@@ -109,21 +181,16 @@ class CharAgent(Character):
         
         This performs one action based on current state.
         """
+        # Use our should_idle method to determine if we should process events
+        tick_start_time = time.time()
+        if self._state.should_idle():
+            return  # Still in idle period
 
-        last_event = self._state.events[-1]
-        current_time = time.time()
-        
-        # Check if we're still in idle period
-        if current_time < last_event.idle_until_timestamp:
-            time_left = last_event.idle_until_timestamp - current_time
-            return  # Do nothing during idle time
-
-        # Idle period complete, run the agent to decide next action
+        # We have new events or idle period is complete - decide next action
         print(f"[DEBUG] {self.name}: Deciding next action")
-   
-        # Debug the incoming message
-        if last_event.message:
-            print(f"[DEBUG] {self.name}: Received message: {last_event.message.model_dump()}")
+        
+        # Get new events for debugging
+        new_events = self._state.get_new_events()
         
         # Create the prompt based on the trigger reason
         prompt = "Decide what to do next."
@@ -135,8 +202,8 @@ class CharAgent(Character):
         # Debug the response from the agent
         print(f"[DEBUG] {self.name}: Agent response: {decision}")
         
-        if decision.action:
-            await self._world.process_character_action(self, decision.action)
+        if decision.action_type != "idle":
+            await self._world.process_character_action(self, decision)
             # Update room info after the action (especially important for movement)
             self._update_room_info()
 
@@ -147,13 +214,18 @@ class CharAgent(Character):
             print(f"[DEBUG] {self.name}: No players in room, adding extra {empty_room_extra_idle} seconds")
             idle_time += empty_room_extra_idle
 
+
+        # Create a new event with the agent's decision and new idle time
         event = CharEvent(
             timestamp=time.time(),
-            action=decision.action,
+            action=decision,
             message=None,
             idle_until_timestamp=time.time() + idle_time 
         )
         self._state.events.append(event)
+        
+        # Update the time that we last processed new events 
+        self._state.last_processed_timestamp = tick_start_time 
 
     
     async def send_message(self, msg: BaseMessage) -> None:
@@ -163,16 +235,16 @@ class CharAgent(Character):
         # Debug incoming messages
         print(f"[DEBUG] {self.name}.send_message called: {msg.model_dump()}")
         
-        # Store the message in the state to be handled on next tick
-        # Only process messages if they come from a different character/user and not the server
-        if isinstance(msg, DialogMessage) and msg.from_character_name != self.name:
+        
+        if ((isinstance(msg, DialogMessage) or isinstance(msg, EmoteMessage)) and msg.from_character_name != self.name) or isinstance(msg, MovementMessage):
+            current_time = time.time()
             self._state.events.append(
-                    CharEvent(
-                        timestamp=time.time(),
-                        action=None,
-                        message=msg,
-                        idle_until_timestamp=time.time()  # Process immediately
-                    )
+                CharEvent(
+                    timestamp=current_time,
+                    action=None,
+                    message=msg,
+                    idle_until_timestamp=current_time
+                )
             )
 
 # Global agent instance that all character agents will share
@@ -200,6 +272,12 @@ You must choose an action based on your current situation:
 3. Move to a connected room using the Move action
 4. Idle for a period of time when appropriate
 
+IMPORTANT: Do NOT include actions within your Say messages. For example:
+- INCORRECT: Say "Hello there! *scratches his chin* How are you doing today?"
+- CORRECT: First use Emote "scratches his chin", then use Say "Hello there! How are you doing today?"
+
+Always separate physical actions (emotes) from spoken dialogue (say).
+
 When deciding what to do:
 - Consider your current location and who else is present
 - Respond appropriately to messages from other characters
@@ -211,9 +289,11 @@ Every action should include an idle duration (how long to pause before the next 
 - Medium duration (20-45 seconds) for normal activities
 - Long duration (45-90 seconds) for when less active or when little is happening
 
-Return your decision as a structured action object, either:
-- A CharacterAction (for say, emote, or move) plus an idle duration
-- An IdleAction (to wait quietly for a while)
+Return your decision as a structured action object with the following properties:
+- action_type: "move", "say", "emote", or "idle"
+- direction: (for move actions) The direction to move in
+- message: (for say/emote actions) What to say or the emote to perform
+- idle_duration: How long to wait before the next action (in seconds)
 
 Be thoughtful about your choices based on the context provided.
         """
@@ -230,38 +310,26 @@ You are currently located at "{state.room_title}": {state.room_description}
 You can see the following exits: {", ".join(state.room_exits)}
 
 You can see the following people, characters, or entities: {", ".join(state.room_characters)}
-
-This is the recent history:
 """
-    
-    # Include the last 10 events (which will display in chronological order, oldest to newest)
-    recent_events = state.events[-10:]
-    formatted_events = []
+
+    # Get new and old events using the helper methods
+    new_events = state.get_new_events()
+    old_events = state.get_old_events(max_events=10)
     current_time = time.time()
     
-    # Process events
-    for event in recent_events:
-        seconds_ago = int(current_time - event.timestamp)
-        
-        if event.message:
-            # Format message events based on type
-            if isinstance(event.message, DialogMessage):
-                formatted_events.append(f"[{seconds_ago} seconds ago] {event.message.from_character_name} said to you: \"{event.message.content}\"")
-        elif event.action:
-            # Format action events
-            if hasattr(event.action, 'action_type'):
-                if event.action.action_type == "say":
-                    formatted_events.append(f"[{seconds_ago} seconds ago] You said: \"{event.action.message}\"")
-                elif event.action.action_type == "emote":
-                    formatted_events.append(f"[{seconds_ago} seconds ago] You {event.action.message}")
-                elif event.action.action_type == "move":
-                    formatted_events.append(f"[{seconds_ago} seconds ago] You moved to {event.action.direction}")
-    
-    # Add the formatted events to the result
-    if formatted_events:
-        result += "\n" + "\n".join(formatted_events)
-    else:
-        result += "\nNo recent activity."
+    # Add the old events section
+    result += "\n\nRecent history:"
+    for event in old_events:
+        formatted_event = event.format_event(current_time)
+        if formatted_event:
+            result += f"\n{formatted_event}"
+
+    # Add the new events section
+    result += "\n\nNew events since you last acted:"
+    for event in new_events:
+        formatted_event = event.format_event(current_time)
+        if formatted_event:
+            result += f"\n{formatted_event}"
    
     print(result)
     return result

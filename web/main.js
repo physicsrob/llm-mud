@@ -399,7 +399,9 @@ document.addEventListener('DOMContentLoaded', () => {
                     const BLUE = "\x1b[94m";
                     const RED = "\x1b[31m";
                     const CYAN = "\x1b[36m";
-                    const MAGENTA = "\x1b[35m";
+                    // Replace magenta with a brighter, higher contrast color
+                    const BRIGHT_CYAN = "\x1b[96m";  // Bright cyan for better contrast
+                    const YELLOW = "\x1b[33m";      // Yellow for contrast
                     
                     // Add a newline before each message
                     term.write('\r\n');
@@ -422,12 +424,20 @@ document.addEventListener('DOMContentLoaded', () => {
                         }
                     } 
                     else if (message.message_type === "dialog") {
-                        // Dialog messages - cyan text
-                        term.write(`${CYAN}${message.from_character_name} says "${message.content}"${RESET}`);
+                        // Determine if message is from current user or others
+                        const isCurrentUser = message.from_character_name === username;
+                        const colorCode = isCurrentUser ? YELLOW : CYAN;
+                        
+                        // Dialog messages - different color based on who's speaking
+                        term.write(`${colorCode}${message.from_character_name} says "${message.content}"${RESET}`);
                     } 
                     else if (message.message_type === "emote") {
-                        // Emote messages - magenta text
-                        term.write(`${MAGENTA}${message.from_character_name} ${message.action}${RESET}`);
+                        // Determine if emote is from current user or others
+                        const isCurrentUser = message.from_character_name === username;
+                        const colorCode = isCurrentUser ? YELLOW : CYAN;
+                        
+                        // Emote messages - same color as dialog for consistency
+                        term.write(`${colorCode}${message.from_character_name} ${message.action}${RESET}`);
                     } 
                     else if (message.message_type === "system") {
                         // System messages - use severity to determine color
@@ -446,8 +456,12 @@ document.addEventListener('DOMContentLoaded', () => {
                         term.write(`${colorCode}${message.content}${RESET}`);
                     } 
                     else if (message.message_type === "movement") {
-                        // Movement messages - magenta text
-                        term.write(`${MAGENTA}${message.character_name} ${message.action}${RESET}`);
+                        // Determine if movement is from current user or others
+                        const isCurrentUser = message.character_name === username;
+                        const colorCode = isCurrentUser ? YELLOW : BRIGHT_CYAN;
+                        
+                        // Movement messages - using bright cyan for better contrast against black
+                        term.write(`${colorCode}${message.character_name} ${message.action}${RESET}`);
                     } 
                     else {
                         // Unknown message format - log error and display generically
