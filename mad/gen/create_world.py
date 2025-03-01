@@ -14,6 +14,10 @@ from .world_improver_agent import improve_world_design, apply_improvement_plan
 from .room_exit_agent import get_room_exits
 from devtools import debug
 
+import logfire
+logfire.configure(
+    send_to_logfire=False
+)
 
 async def design_world(theme: str, story_count: int = 10) -> WorldDesign:
     """
@@ -205,7 +209,7 @@ async def improve_world_design_iteration(world_design: WorldDesign) -> WorldDesi
                 long_description=room.long_description
             ) for room in world_design.locations
         ],
-        character_locations={},  # Not needed for improvement
+        character_locations=world_design.character_locations,  # Preserve character locations
         location_connections={
             room.id: [exit.destination_id for exit in room.exits]
             for room in world_design.locations
@@ -223,7 +227,7 @@ async def improve_world_design_iteration(world_design: WorldDesign) -> WorldDesi
     debug(improved_world)
     
     # Generate detailed exits for all rooms
-    print("\nGenerating room exits...")
+    print("\nRecreating room exits...")
     rooms_with_exits_tasks = []
     for room in improved_world.locations:
         # Get connected room IDs for this room
@@ -242,6 +246,7 @@ async def improve_world_design_iteration(world_design: WorldDesign) -> WorldDesi
         world_description=world_design.world_description,
         locations=rooms_with_exits,
         characters=world_design.characters,
+        character_locations=improved_world.character_locations,  # Preserve character locations
         starting_room_id=world_design.starting_room_id
     )
     

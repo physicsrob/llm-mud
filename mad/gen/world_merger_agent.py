@@ -33,13 +33,11 @@ you will:
      * Have a unique ID, title, brief description, and long description
      * Make narrative sense as a connection point between story elements
      * Fit the themes and atmosphere of the locations it connects
-     * Consider creating new locations to prevent any single location from having too many connections
 
 3. DESIGN NEW CONNECTIONS:
    - Create a list of new connections between locations to ensure all stories are interconnected
    - Each connection is a mapping from source location id to a list of locations ids which are new connections
    - Ensure that by following these connections, a player could reach any location from any other location
-   - Try to avoid creating connections that have more than 4 connections. New intermediate locations can help.
 
 4. SELECT A STARTING ROOM:
    - Choose one location ID that would serve as an ideal starting point for players
@@ -76,7 +74,7 @@ async def merge_story_worlds(story_components: list[StoryWorldComponents]) -> Wo
         model=model,
         result_type=WorldMergeMapping,
         system_prompt=world_merger_prompt,
-        retries=10,
+        retries=2,
         model_settings={"temperature": 0.2},
     )
     

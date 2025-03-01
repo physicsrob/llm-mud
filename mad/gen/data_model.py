@@ -90,7 +90,7 @@ class WorldMergeMapping(BaseModel):
     )
     
     new_locations: list[RoomDescription] = Field(
-        description="List of important locations where major plot points take place in the story",
+        description="List of new locations useful for merging the many stories together",
         default_factory=list
     )
     
