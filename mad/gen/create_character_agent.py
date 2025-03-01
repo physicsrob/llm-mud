@@ -75,7 +75,7 @@ async def create_character_agent(
     # Create generation context
     context = CharacterGenerationContext(
         world_title=world_desc.title,
-        world_description=world_desc.brief_description,
+        world_description=world_desc.description,
         room_title=room.title,
         room_description=room.brief_description,
         existing_char_descriptions = [char.brief_description for char in existing_chars]

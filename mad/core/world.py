@@ -24,9 +24,7 @@ class World(BaseModel):
 
     # Identity and description
     title: str
-    brief_description: str
-    long_description: str
-    other_details: str = ""
+    description: str
 
     # Content
     rooms: dict[str, Room] = Field(default_factory=dict)
@@ -166,7 +164,7 @@ class World(BaseModel):
         # Send system message with world info
         await player.send_message(
             SystemMessage(
-                content=self.brief_description,
+                content=self.description,
                 title=welcome_message,
                 severity="info"
             )

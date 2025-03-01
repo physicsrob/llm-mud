@@ -42,7 +42,12 @@ def server(world_file: str, backend_only: bool = False):
 @click.argument("theme")
 @click.argument("num_rooms", type=int)
 @click.argument("output_file")
-def create_world(theme: str, num_rooms: int, output_file: str):
+@click.option("--no-map", is_flag=True, help="Don't generate map connections between rooms")
+@click.option("--no-room-details", is_flag=True, help="Don't generate detailed room descriptions")
+@click.option("--no-chars", is_flag=True, help="Don't generate characters for rooms")
+@click.option("--no-stories", is_flag=True, help="Don't generate stories for the world")
+def create_world(theme: str, num_rooms: int, output_file: str, no_map: bool = False, 
+                no_room_details: bool = False, no_chars: bool = False, no_stories: bool = False):
     """Create a new world with the specified theme, number of rooms, and output name.
 
     THEME: The theme of the world (e.g. 'fantasy', 'scifi')
@@ -50,7 +55,11 @@ def create_world(theme: str, num_rooms: int, output_file: str):
     OUTPUT_NAME: Name of the output file (without extension)
     """
     try:
-        world = asyncio.run(run_create_world(theme, num_rooms))
+        world = asyncio.run(run_create_world(theme, num_rooms, 
+                           skip_map=no_map, 
+                           skip_room_details=no_room_details, 
+                           skip_chars=no_chars,
+                           skip_stories=no_stories))
         # Add .json extension if not present
         if not output_file.endswith(".json"):
             output_file += ".json"

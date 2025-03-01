@@ -78,8 +78,7 @@ async def describe_room(
     user_prompt = f"""
     Generate a new room description that fits in this world.
     World Title: {world.title}
-    World Description: {world.long_description}
-    Other World Details: {world.other_details}
+    World Description: {world.description}
     Room ID: {room_id}
     Room Title: {room_title}
     Room Exits: {room_exits}

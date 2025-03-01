@@ -45,12 +45,8 @@ class RoomDescription(BaseModel):
 
 class WorldDescription(BaseModel):
     title: str = Field(description="The title of the game world")
-    brief_description: str = Field(
-        description="A short one pargraph description of the world shown everytime you log in"
-    )
-    long_description: str = Field(
-        description="A detailed description of the world shown when examining it"
-    )
-    other_details: str = Field(
-        description="Other details about the world that are not directly observable by the player"
+    description: str = Field(description="The description of the game world. Should be approximately one brief paragraph.")
+    story_titles: list[str] = Field(
+        description="A list of engaging story titles set in this world, each fitting the world's theme",
+        default_factory=list
     )

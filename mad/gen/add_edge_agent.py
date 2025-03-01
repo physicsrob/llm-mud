@@ -42,8 +42,7 @@ async def add_edge(
 
     user_prompt = f"""
     World Title: {world.title}
-    World Description: {world.long_description}
-    Other World Details: {world.other_details}
+    World Description: {world.description}
 
     Existing edges:
     {existing_edges}

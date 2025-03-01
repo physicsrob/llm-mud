@@ -47,8 +47,7 @@ async def generate_starting_room(world: WorldDescription) -> RoomDescription:
     user_prompt = f"""
     Generate a starting room that perfectly fits this world.
     World Title: {world.title}
-    World Description: {world.long_description}
-    Other World Details: {world.other_details}
+    World Description: {world.description}
     """
 
     result = await starting_room_agent.run(
