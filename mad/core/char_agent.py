@@ -126,23 +126,20 @@ class CharAgent(Character):
     
     type: Literal["CharAgent"] = Field(default="CharAgent")
     
-    brief_description: str = Field(
-        description="A brief description of what a player might see if they looked at the character. This should be in the third person.",
+    appearance: str = Field(
+        description="A brief description of the character's appearance. Told in the third person.",
         default=""
     )
-    internal_description: str = Field(
-        description="A short description of the character. This should be in the second person. 'You are ...'",
+    description: str = Field(
+        description="A detailed character description told in the second person. Includes personality, goals, and motivations.",
         default=""
     )
-    internal_personality: str = Field(
-        description="A paragraph describing the character's personality. This should be in the second person. 'You are ...'",
+    preferred_location_ids: list[str] = Field(
+        description="A list of location ids you prefer to stay in.",
         default=""
     )
-    internal_goals: str = Field(
-        description="The character's goals and motivations. This should be in the second person, e.g. 'You are trying ...'. Only the character knows their own goals.",
-        default=""
-    )
-   
+
+
     def init(self, world: "World"):
         # Initialize attributes with underscore prefix to exclude from serialization
         self._world = world
@@ -260,11 +257,9 @@ char_agent_actor = Agent(
 def main_prompt(ctx) -> str:
     char_agent:CharAgent = ctx.deps
     return f"""\
-You are {char_agent.name}. {char_agent.internal_description}
+{char_agent.description}
 
-{char_agent.internal_personality}
-
-{char_agent.internal_goals}
+You prefer to stay in the following locations: {char_agent.preferred_location_ids}
 
 You must choose an action based on your current situation:
 1. Say something to others in the room using the Say action

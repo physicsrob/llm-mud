@@ -9,6 +9,8 @@ class Character(BaseModel):
     id: str
     name: str
     type: Literal["Character"]  # Discriminator field for character type
+    previous_room_id: str | None = None
+    previous_room_title: str | None = None
 
     async def tick(self) -> None:
         pass

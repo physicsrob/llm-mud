@@ -11,7 +11,7 @@ from mad.core.char_agent import CharAgent
 from mad.core.room import Room
 from mad.networking.messages import (
     BaseMessage, RoomMessage, SystemMessage, 
-    DialogMessage, EmoteMessage, MovementMessage
+    DialogMessage, EmoteMessage, MovementMessage, ExitDescription
 )
 
 CharType = Annotated[Player | CharAgent, Field(discriminator='type')]
@@ -90,7 +90,17 @@ class World(BaseModel):
             return None
 
         # Get the ID of the destination room
-        destination_id = current_room.exits.get(direction)
+        # First check if the exit name matches any in the exit_objects list
+        destination_id = None
+        for exit in current_room.exit_objects:
+            if exit.exit_name == direction:
+                destination_id = exit.destination_id
+                break
+        
+        # As a backup, check the old-style exits dictionary
+        if not destination_id:
+            destination_id = current_room.exits.get(direction)
+            
         if not destination_id:
             return None
 
@@ -107,7 +117,13 @@ class World(BaseModel):
             self.room_characters[destination_room.id] = []
 
         # Get character name for emote messages
-        character_name = self.characters.get(character_id).name if character_id in self.characters else "Someone"
+        character = self.characters.get(character_id)
+        character_name = character.name if character else "Someone"
+
+        # Store previous room for all characters
+        if character:
+            character.previous_room_id = current_room.id
+            character.previous_room_title = current_room.title
 
         if character_id in self.room_characters[current_room.id]:
             # Broadcast departure message to current room before removing character
@@ -182,7 +198,13 @@ class World(BaseModel):
                 title=current_room.title,
                 description=current_room.brief_describe(),
                 characters_present=characters_in_room,
-                exits=list(current_room.exits.keys())
+                exits=[
+                    ExitDescription(
+                        name=exit.exit_name,
+                        description=exit.exit_description,
+                        destination_id=exit.destination_id
+                    ) for exit in current_room.exit_objects
+                ]
             )
         )
 
@@ -249,12 +271,29 @@ class World(BaseModel):
                 characters_in_room = self.get_characters_in_room(room.id, character.id)
                 
                 # Send room description with all metadata
+                exits_list = []
+                for exit in room.exit_objects:
+                    exit_desc = exit.exit_description
+                    
+                    # Check if this exit leads back to the previous room
+                    if (character.previous_room_id and 
+                        exit.destination_id == character.previous_room_id):
+                        exit_desc += f" (Return to \"{character.previous_room_title}\")"
+                    
+                    exits_list.append(
+                        ExitDescription(
+                            name=exit.exit_name,
+                            description=exit_desc,
+                            destination_id=exit.destination_id
+                        )
+                    )
+                
                 await character.send_message(
                     RoomMessage(
                         title=room.title,
                         description=room.brief_describe(),
                         characters_present=characters_in_room,
-                        exits=list(room.exits.keys())
+                        exits=exits_list
                     )
                 )
         elif action.action_type == "look":
@@ -264,12 +303,29 @@ class World(BaseModel):
                 characters_in_room = self.get_characters_in_room(room.id, character.id)
                 
                 # Send detailed room description
+                exits_list = []
+                for exit in room.exit_objects:
+                    exit_desc = exit.exit_description
+                    
+                    # Check if this exit leads back to the previous room
+                    if (character.previous_room_id and 
+                        exit.destination_id == character.previous_room_id):
+                        exit_desc += f" (Return to \"{character.previous_room_title}\")"
+                    
+                    exits_list.append(
+                        ExitDescription(
+                            name=exit.exit_name,
+                            description=exit_desc,
+                            destination_id=exit.destination_id
+                        )
+                    )
+                
                 await character.send_message(
                     RoomMessage(
                         title=room.title,
                         description=room.describe(),  # Full description for "look"
                         characters_present=characters_in_room,
-                        exits=list(room.exits.keys())
+                        exits=exits_list
                     )
                 )
         elif action.action_type in ("say", "emote") and action.message:

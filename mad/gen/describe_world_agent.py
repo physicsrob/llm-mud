@@ -17,7 +17,7 @@ Create an immersive game world with:
    - Incorporates mysterious elements that invite exploration
    - Hints at hidden dangers and treasures
    - Suggests a living world with hints of its history
-3. Three engaging story titles for tales set in this world that:
+3. Ten engaging story titles for tales set in this world that:
    - Showcase different aspects of the world and its inhabitants
    - Hint at interesting conflicts, mysteries, or adventures
    - Each have a different tone or focus (heroic, mysterious, humorous)
@@ -52,7 +52,7 @@ model = OpenAIModel(
 world_gen_agent = Agent(
     model=model,
     result_type=WorldDescription,
-    retries=2,
+    retries=10,
     system_prompt=prompt,
     model_settings={
         "temperature": 0.7,
@@ -72,4 +72,7 @@ async def describe_world(theme: str) -> WorldDescription:
     user_prompt = f"Generate a new world description with the theme: {theme}"
 
     result = await world_gen_agent.run(user_prompt)
+    from devtools import debug
+    debug(result)
+
     return result.data

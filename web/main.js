@@ -423,7 +423,12 @@ document.addEventListener('DOMContentLoaded', () => {
                         
                         // Display exits if present
                         if (message.exits && message.exits.length > 0) {
-                            term.write(`\r\n\r\nExits: ${message.exits.join(', ')}`);
+                            term.write('\r\n\r\nExits:');
+                            
+                            // Display each exit with its description
+                            for (const exit of message.exits) {
+                                term.write(`\r\n${BOLD}${exit.name}${RESET}: ${exit.description}`);
+                            }
                         }
                     } 
                     else if (message.message_type === "dialog") {

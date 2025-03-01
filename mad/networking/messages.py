@@ -6,13 +6,19 @@ class BaseMessage(BaseModel):
     """Base class for all messages to characters."""
     message_type: str = Field(description="Discriminator field for message type")
 
+class ExitDescription(BaseModel):
+    """Exit description for room messages."""
+    name: str
+    description: str
+    destination_id: str
+
 class RoomMessage(BaseMessage):
     """Room description message."""
     message_type: Literal["room"] = "room"
     title: str  # Room name
     description: str  # Room description
     characters_present: list[str] = Field(default_factory=list)
-    exits: list[str] = Field(default_factory=list)
+    exits: list[ExitDescription] = Field(default_factory=list)  # Detailed exit information
 
 class DialogMessage(BaseMessage):
     """Character speech."""

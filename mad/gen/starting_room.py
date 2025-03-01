@@ -1,7 +1,7 @@
 from pydantic_ai import Agent
 from pydantic_ai.models.openai import OpenAIModel
 
-from mad.gen.data_model import RoomDescription
+from mad.gen.data_model import RoomDescription, RoomDescriptionWithExits
 from mad.gen.data_model import WorldDescription
 from ..config import creative_model_instance
 
@@ -25,7 +25,7 @@ The room should have 2 - 4 exits.
 
 starting_room_agent = Agent(
     model=creative_model_instance,
-    result_type=RoomDescription,
+    result_type=RoomDescriptionWithExits,
     retries=2,
     system_prompt=starting_room_prompt,
     model_settings={
@@ -34,14 +34,14 @@ starting_room_agent = Agent(
 )
 
 
-async def generate_starting_room(world: WorldDescription) -> RoomDescription:
+async def generate_starting_room(world: WorldDescription) -> RoomDescriptionWithExits:
     """Generate a room description that fits within the given world.
 
     Args:
         world: The WorldDescription containing context about the game world
 
     Returns:
-        StartingRoomDescription containing the generated room details
+        RoomDescriptionWithExits containing the generated room details
     """
 
     user_prompt = f"""

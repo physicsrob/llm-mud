@@ -2,6 +2,15 @@ from pydantic import BaseModel, Field
 from typing import Dict, List, Optional
 
 
+class RoomExit(BaseModel):
+    """
+    An exit leading from one room to another.
+    """
+    destination_id: str
+    exit_description: str
+    exit_name: str
+
+
 class Room(BaseModel):
     """
     Room in the game world.
@@ -18,10 +27,9 @@ class Room(BaseModel):
     brief_description: str
     long_description: str
 
-    # Runtime state (mutable during gameplay)
+    # Room exits
     exits: Dict[str, str] = Field(default_factory=dict)  # direction -> room_id
-
-    # Additional properties can be added as needed
+    exit_objects: List[RoomExit] = Field(default_factory=list)
 
     def describe(self) -> str:
         """Get a full description of the room."""

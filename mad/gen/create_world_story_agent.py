@@ -1,9 +1,11 @@
+import asyncio
 from pydantic import BaseModel, Field
+from devtools import debug
 from pydantic_ai import Agent
 from pydantic_ai.models.openai import OpenAIModel
 
-from mad.gen.data_model import WorldDescription
-from mad.config import creative_model, OPENROUTER_BASE_URL, OPENROUTER_API_KEY
+from mad.gen.data_model import WorldDescription, StoryWorldComponents
+from mad.config import story_model_instance
 
 
 class WorldStory(BaseModel):
@@ -17,7 +19,7 @@ story_gen_prompt = """
 You are a master storyteller creating engaging tales.
 
 Use the provided world description and story title to craft a compelling story that:
-1. Is approximately 500 - 1000 words.
+1. Is approximately 500 words.
 2. Features vivid characters and memorable situations
 3. Includes conflict, tension, and resolution
 4. Illuminates the world's culture, history, or values
@@ -44,17 +46,11 @@ async def create_world_story(world_desc: WorldDescription, story_title: str) -> 
         A fully crafted story set in the world
     """
     # Initialize the agent for story generation
-    model = OpenAIModel(
-        creative_model,
-        base_url=OPENROUTER_BASE_URL,
-        api_key=OPENROUTER_API_KEY,
-    )
-    
     generation_agent = Agent(
-        model=model,
-        result_type=WorldStory,
+        model=story_model_instance,
+        result_type=str,
         system_prompt=story_gen_prompt,
-        retries=2,
+        retries=1,
         model_settings={"temperature": 0.8},
     )
     
@@ -67,5 +63,35 @@ async def create_world_story(world_desc: WorldDescription, story_title: str) -> 
     Description: {world_desc.description}
     """
     
+    print("Starting Generation")
     result = await generation_agent.run(user_prompt)
-    return result.data
+    if result._state.retries>1:
+        debug(result)
+    print("Finished Generation")
+    return WorldStory(title=story_title, content=result.data)
+
+
+async def create_story_world(world_desc: WorldDescription, story_title: str) -> StoryWorldComponents:
+    """
+    Create a story set in the given world with the specified title, and extract its components.
+    
+    Args:
+        world_desc: Description of the game world
+        story_title: The title for the story to be generated
+        
+    Returns:
+        A StoryWorldComponents object containing the story, characters and locations
+    """
+    # Generate the story
+    print(f"\nGenerating story: '{story_title}'...")
+    story = await create_world_story(world_desc, story_title)
+
+    # Extract characters and locations from the story
+    print(f"Extracting story components from '{story_title}'...")
+    # Import here to avoid circular imports
+    from mad.gen.story_component_agent import extract_story_components
+    components = await extract_story_components(story)
+    debug(components)
+    
+    # Return the StoryWorldComponents object
+    return components
