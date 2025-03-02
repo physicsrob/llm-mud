@@ -205,7 +205,10 @@ async def improve_world_design_iteration(world_design: WorldDesign) -> WorldDesi
     
     # Run the improvement process
     print("\nImproving world design location-by-location...")
-    improved_world = await improve_world_design(components)
+    improved_world, updated_starting_id = await improve_world_design(
+        components, 
+        world_design.starting_location_id
+    )
     
     # Generate detailed exits for all locations
     print("\nRecreating location exits...")
@@ -227,7 +230,7 @@ async def improve_world_design_iteration(world_design: WorldDesign) -> WorldDesi
         locations=locations_with_exits,
         characters=world_design.characters,
         character_locations=improved_world.character_locations,  # Preserve character locations
-        starting_location_id=world_design.starting_location_id
+        starting_location_id=updated_starting_id or world_design.starting_location_id
     )
     
     return improved_design

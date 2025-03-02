@@ -122,16 +122,18 @@ Here are the details of the connected locations:
 async def improve_single_location_and_apply(
     story_components: StoryWorldComponents,
     location_id: str,
-) -> StoryWorldComponents:
+    starting_location_id: str | None = None,
+) -> tuple[StoryWorldComponents, str | None]:
     """
     Improve a single location and apply the changes immediately.
     
     Args:
         story_components: The current state of the world
         location_id: The ID of the location to improve
+        starting_location_id: The current starting location ID
         
     Returns:
-        Updated StoryWorldComponents with the improvements applied
+        Tuple of (Updated StoryWorldComponents with the improvements applied, potentially updated starting location ID)
     """
     # Get the improvement plan for this location
     location_plan = await improve_single_location(story_components, location_id)
@@ -139,22 +141,24 @@ async def improve_single_location_and_apply(
     # If no improvements were suggested, return the original components
     if not location_plan.new_locations and not location_plan.updated_connections:
         print(f"No improvements could be made for location {location_id}")
-        return story_components
+        return story_components, starting_location_id
     
     # Check if plan includes exactly two new locations
     if len(location_plan.new_locations) != 2:
         print(f"Error: Expected exactly 2 new locations in the improvement plan for {location_id}, but got {len(location_plan.new_locations)}. Skipping improvement.")
-        return story_components
+        return story_components, starting_location_id
     
     # Create a copy to modify
     improved_components = deepcopy(story_components)
     
-    # Print out the old location/exits
-    print(f"\nStarting Location: {location_id}")
-    start_location_details = next((loc for loc in story_components.locations if loc.id == location_id), None)
-    if start_location_details:
-        print(f"Title: {start_location_details.title}")
-        print(f"Original connections: {story_components.location_connections.get(location_id, [])}")
+    # Check if we're splitting the starting location
+    updated_starting_id = starting_location_id
+    if starting_location_id == location_id:
+        # Use the first new location as the starting location
+        updated_starting_id = location_plan.new_locations[0].id
+        print(f"Starting location {location_id} is being split. New starting location: {updated_starting_id}")
+    
+    # Skip printing old location details
     
     # Delete the old location
     improved_components.locations = [loc for loc in improved_components.locations if loc.id != location_id]
@@ -294,28 +298,31 @@ async def improve_single_location_and_apply(
             if source_id not in improved_components.location_connections[dest_id]:
                 improved_components.location_connections[dest_id].append(source_id)
     
-    # Print out the new two locations, each with their exits
-    for new_location in location_plan.new_locations:
-        print(f"New Location: {new_location.id}")
-        print(f"Title: {new_location.title}")
-        print(f"Brief Description: {new_location.brief_description}")
-        print(f"Connections: {improved_components.location_connections.get(new_location.id, [])}")
+    # Skip printing details of new locations
     
-    return improved_components
+    return improved_components, updated_starting_id
 
-async def improve_world_design(story_components: StoryWorldComponents) -> StoryWorldComponents:
+async def improve_world_design(
+    story_components: StoryWorldComponents, 
+    starting_location_id: str | None = None
+) -> tuple[StoryWorldComponents, str | None]:
     """
     Improve a world design by ensuring no location has too many connections.
     This function processes locations one-by-one and applies improvements incrementally.
     
     Args:
         story_components: A StoryWorldComponents object containing locations and their connections
+        starting_location_id: The current starting location ID
         
     Returns:
-        An improved StoryWorldComponents object with balanced connections
+        Tuple of (Improved StoryWorldComponents object with balanced connections, potentially updated starting location ID)
     """
     # Create working copy of the world components
     working_components = deepcopy(story_components)
+    updated_starting_id = starting_location_id
+    
+    # Track all new locations created during the improvement process
+    all_new_location_ids = set()
     
     # Process locations in iterations until no overcrowded locations remain
     iteration = 1
@@ -341,36 +348,90 @@ async def improve_world_design(story_components: StoryWorldComponents) -> StoryW
         location_id, connection_count = overcrowded_locations[0]
         print(f"Improving location {location_id} with {connection_count} connections")
         
+        # Capture existing location IDs before improvement
+        existing_location_ids = {loc.id for loc in working_components.locations}
+        
         # Improve this single location and apply changes
-        improved_components = await improve_single_location_and_apply(
+        improved_components, updated_starting_id = await improve_single_location_and_apply(
             working_components, 
             location_id,
+            updated_starting_id
         )
+        
+        # Find new locations added in this iteration
+        new_ids_this_iteration = {loc.id for loc in improved_components.locations} - existing_location_ids
+        all_new_location_ids.update(new_ids_this_iteration)
         
         # Check if any improvements were made
         if len(improved_components.locations) > len(working_components.locations):
             # New locations were added
             new_location_count = len(improved_components.locations) - len(working_components.locations)
-            print(f"Added {new_location_count} new intermediate locations")
+            print(f"Added {new_location_count} new intermediate locations: {', '.join(new_ids_this_iteration)}")
+            
+            # Get connection counts for old and new rooms
+            old_room_connection_count = len(working_components.location_connections.get(location_id, []))
+            old_room_name = next((loc.title for loc in story_components.locations if loc.id == location_id), "Unknown")
+            
+            # Print old room and its connection count
+            print(f"\nSplit room: {location_id} ({old_room_name}) - {old_room_connection_count} connections")
+            print("Into new rooms:")
+            
+            # Print new rooms and their connection counts
+            for new_id in new_ids_this_iteration:
+                new_room_connections = len(improved_components.location_connections.get(new_id, []))
+                new_room_name = next((loc.title for loc in improved_components.locations if loc.id == new_id), "Unknown")
+                print(f"  {new_id} ({new_room_name}) - {new_room_connections} connections")
         
         # Update our working copy
         working_components = improved_components
         
-        # Show current state
-        current_connection_counts = {
+        # Show all locations sorted by id
+        all_connection_counts = {
             loc_id: len(connections) 
             for loc_id, connections in working_components.location_connections.items()
-            if len(connections) > 4  # Only show overcrowded locations
         }
         
-        if current_connection_counts:
-            print(f"Locations still overcrowded: {current_connection_counts}")
+        # Get all location IDs
+        all_location_ids = set(all_connection_counts.keys())
+        
+        # Use the tracked new location IDs for highlighting
+        
+        # Calculate total connections and rooms
+        total_rooms = len(working_components.locations)
+        total_connections = sum(len(connections) for connections in working_components.location_connections.values()) // 2  # Divide by 2 since connections are bidirectional
+        
+        # Sort locations by ID
+        sorted_locations = sorted(all_connection_counts.items(), key=lambda x: x[0])
+        
+        print("\nCurrent connection counts:")
+        for loc_id, count in sorted_locations:
+            loc_name = next((loc.title for loc in working_components.locations if loc.id == loc_id), "Unknown")
+            if loc_id in new_ids_this_iteration:  # Only mark locations from current iteration
+                print(f"  {loc_id} ({loc_name}): {count} connections [NEW]")
+            else:
+                print(f"  {loc_id} ({loc_name}): {count} connections")
+        
+        # Display summary statistics
+        print(f"\nTotal rooms: {total_rooms}")
+        print(f"Total connections: {total_connections}")
+        
+        # Display overcrowded locations separately
+        overcrowded = {k: v for k, v in all_connection_counts.items() if v > 4}
+        if overcrowded:
+            print(f"Locations still overcrowded: {len(overcrowded)}")
         
         iteration += 1
     
     if iteration > max_iterations:
         print("Reached maximum iteration count. Some locations may still be overcrowded.")
     
-    return working_components
+    # Print final summary
+    total_rooms = len(working_components.locations)
+    total_connections = sum(len(connections) for connections in working_components.location_connections.values()) // 2
+    print(f"\nFinal world state:")
+    print(f"Total rooms: {total_rooms}")
+    print(f"Total connections: {total_connections}")
+    
+    return working_components, updated_starting_id
 
 
