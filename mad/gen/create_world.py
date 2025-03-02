@@ -10,7 +10,7 @@ from .describe_world_agent import describe_world
 from .create_character_agent import create_character_agent
 from .create_world_story_agent import create_story_world
 from .world_merger_agent import merge_story_worlds, apply_merge_plan
-from .world_improver_agent import improve_world_design, apply_improvement_plan
+from .world_improver_agent import improve_world_design
 from .room_exit_agent import get_room_exits
 from devtools import debug
 
@@ -42,53 +42,42 @@ async def design_world(theme: str, story_count: int = 10) -> WorldDesign:
     tasks = []
     for title in world_desc.story_titles[:story_count]:
         print(f"  - {title}")
-        task = asyncio.create_task(create_story_world(world_desc, title))
+        task = asyncio.create_task(create_story_world(world_desc, title, theme))
         tasks.append(task)
     
     # Wait for all tasks to complete
     story_worlds = await asyncio.gather(*tasks)
+
+    debug(story_worlds)
 
     # If we have multiple stories, merge them
     starting_room_id = None
     if len(story_worlds) > 1:
         print("\nMerging story worlds...")
         merge_plan = await merge_story_worlds(story_worlds)
-        debug(merge_plan)
         
         # Apply the merge plan
         print("\nApplying merge plan...")
         merged_world = apply_merge_plan(merge_plan, story_worlds)
         starting_room_id = merge_plan.starting_room_id
-        debug(merged_world)
     elif len(story_worlds) == 1:
         merged_world = story_worlds[0]
     else:
         raise ValueError("No story worlds were generated")
     
-    # Improve the world design by balancing connections
-    print("\nImproving world design...")
-    improvement_plan = await improve_world_design(merged_world)
-    debug(improvement_plan)
-    
-    # Apply the improvement plan
-    print("\nApplying improvement plan...")
-    improved_world = apply_improvement_plan(improvement_plan, merged_world)
-    debug(improved_world)
-    
     # Generate detailed exits for all rooms
     print("\nGenerating room exits...")
     rooms_with_exits_tasks = []
-    for room in improved_world.locations:
+    for room in merged_world.locations:
         # Get connected room IDs for this room
-        connected_ids = improved_world.location_connections.get(room.id, [])
+        connected_ids = merged_world.location_connections.get(room.id, [])
         task = asyncio.create_task(
-            get_room_exits(room, improved_world.locations, connected_ids)
+            get_room_exits(room, merged_world.locations, connected_ids)
         )
         rooms_with_exits_tasks.append(task)
     
     # Wait for all exit generation tasks to complete
     rooms_with_exits = await asyncio.gather(*rooms_with_exits_tasks)
-    debug(rooms_with_exits)
     
     # If no starting room was specified or only one story, use the first room
     if not starting_room_id and rooms_with_exits:
@@ -217,14 +206,8 @@ async def improve_world_design_iteration(world_design: WorldDesign) -> WorldDesi
     )
     
     # Run the improvement process
-    print("\nImproving world design...")
-    improvement_plan = await improve_world_design(components)
-    debug(improvement_plan)
-    
-    # Apply the improvement plan
-    print("\nApplying improvement plan...")
-    improved_world = apply_improvement_plan(improvement_plan, components)
-    debug(improved_world)
+    print("\nImproving world design room-by-room...")
+    improved_world = await improve_world_design(components)
     
     # Generate detailed exits for all rooms
     print("\nRecreating room exits...")
@@ -239,7 +222,6 @@ async def improve_world_design_iteration(world_design: WorldDesign) -> WorldDesi
     
     # Wait for all exit generation tasks to complete
     rooms_with_exits = await asyncio.gather(*rooms_with_exits_tasks)
-    debug(rooms_with_exits)
     
     # Create the improved WorldDesign
     improved_design = WorldDesign(

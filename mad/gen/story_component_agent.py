@@ -31,6 +31,15 @@ PART 2: LOCATION ANALYSIS
    - A minimal placeholder long description (just enough to identify the location)
 3. Additionally, identify and invent if necessary, 1-5 locations which connect the key locations together.
 
+PART 3: LOCATION CONNECTIONS
+1. Determine which locations are connected to each other in the story
+2. For each location, list all the other locations it directly connects to
+3. These connections should:
+   - Reflect paths or routes mentioned in the story
+   - Include logical connections between adjacent locations
+   - Ensure that all locations are connected to at least one other location
+   - Create a network where all locations can be reached from any other location
+
 Focus only on extracting the essential information. Detailed descriptions will be generated separately.
 """
 
@@ -254,7 +263,9 @@ async def extract_story_components(story_title: str, story_content: str) -> Stor
     components = result.data
     if result._state.retries > 1:
         debug(result)
-    
+   
+    debug(components)
+    exit()
     print(f"✓ Identified {len(components.characters)} characters and {len(components.locations)} locations")
     
     # Step 2: Generate detailed descriptions concurrently
@@ -304,6 +315,28 @@ async def extract_story_components(story_title: str, story_content: str) -> Stor
     for i, location in enumerate(components.locations):
         location.brief_description = location_brief_descs[i]
         location.long_description = location_long_descs[i]
+    
+    # Step 4: Ensure location connections are bidirectional
+    print("Step 4: Ensuring bidirectional location connections...")
+    
+    # Create a copy of the connections to avoid modifying while iterating
+    connections_copy = {loc_id: destinations.copy() for loc_id, destinations in components.location_connections.items()}
+    
+    # Iterate through all connections and ensure they're bidirectional
+    for source_id, destinations in connections_copy.items():
+        for dest_id in destinations:
+            # If destination doesn't have connections yet, initialize it
+            if dest_id not in components.location_connections:
+                components.location_connections[dest_id] = []
+            
+            # Add the reverse connection if it doesn't exist
+            if source_id not in components.location_connections[dest_id]:
+                components.location_connections[dest_id].append(source_id)
+    
+    # Ensure all locations have an entry in location_connections, even if empty
+    for location in components.locations:
+        if location.id not in components.location_connections:
+            components.location_connections[location.id] = []
     
     print("✓ Component extraction and description complete!")
     return components

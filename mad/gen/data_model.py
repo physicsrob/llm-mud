@@ -103,11 +103,11 @@ class WorldMergeMapping(BaseModel):
     )
 
 
-class WorldImprovementPlan(BaseModel):
-    """Plan for improving a world's design by preventing locations from having too many connections."""
+class RoomImprovementPlan(BaseModel):
+    """Plan for improving a single room's design by preventing it from having too many connections."""
     
     new_locations: list[RoomDescription] = Field(
-        description="New intermediate locations to help distribute connections more evenly",
+        description="New intermediate locations to help distribute connections from this room",
         default_factory=list
     )
     
