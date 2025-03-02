@@ -28,7 +28,7 @@ The world should:
 - Feature at least one unusual characteristic that makes this world unique
 - Leave open questions that spark curiosity
 - Set the stage for a rich, engaging story
-- Not be focused on a single room or location, but rather a theme or setting that can be explored in a series of locations
+- Not be focused on a single location or location, but rather a theme or setting that can be explored in a series of locations
 
 Important:
 - The description should set the stage for storytelling

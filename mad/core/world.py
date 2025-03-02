@@ -8,9 +8,9 @@ from mad.core.character import Character
 from mad.core.character_action import CharacterAction
 from mad.core.player import Player
 from mad.core.char_agent import CharAgent
-from mad.core.room import Room
+from mad.core.location import Location
 from mad.networking.messages import (
-    BaseMessage, RoomMessage, SystemMessage, 
+    BaseMessage, LocationMessage, SystemMessage, 
     DialogMessage, EmoteMessage, MovementMessage, ExitDescription
 )
 
@@ -19,7 +19,7 @@ CharType = Annotated[Player | CharAgent, Field(discriminator='type')]
 
 class World(BaseModel):
     """
-    Game world containing rooms, characters, and game state.
+    Game world containing locations, characters, and game state.
     """
 
     # Identity and description
@@ -27,13 +27,13 @@ class World(BaseModel):
     description: str
 
     # Content
-    rooms: dict[str, Room] = Field(default_factory=dict)
-    starting_room_id: str | None = None
+    locations: dict[str, Location] = Field(default_factory=dict)
+    starting_location_id: str | None = None
 
     # Runtime state
-    room_characters: dict[str, list[str]] = Field(
+    location_characters: dict[str, list[str]] = Field(
         default_factory=lambda: {}
-    )  # room_id -> [character_ids]
+    )  # location_id -> [character_ids]
     characters: dict[str, CharType] = Field(
         default_factory=dict,
     )  # character_id -> Character object
@@ -46,129 +46,129 @@ class World(BaseModel):
                 char.init(self)
         return self
 
-    def create_room(self, room: Room) -> None:
-        """Add a room to the world."""
-        self.rooms[room.id] = room
+    def create_location(self, location: Location) -> None:
+        """Add a location to the world."""
+        self.locations[location.id] = location
 
-    def set_starting_room(self, room_id: str) -> None:
-        """Set the starting room for new players."""
-        if room_id not in self.rooms:
-            raise ValueError(f"Room '{room_id}' does not exist")
-        self.starting_room_id = room_id
+    def set_starting_location(self, location_id: str) -> None:
+        """Set the starting location for new players."""
+        if location_id not in self.locations:
+            raise ValueError(f"Location '{location_id}' does not exist")
+        self.starting_location_id = location_id
 
-    def get_character_room(self, character_id: str) -> Room | None:
-        """Get the room a character is currently in."""
-        for room_id, characters in self.room_characters.items():
+    def get_character_location(self, character_id: str) -> Location | None:
+        """Get the location a character is currently in."""
+        for location_id, characters in self.location_characters.items():
             if character_id in characters:
-                return self.rooms.get(room_id)
+                return self.locations.get(location_id)
         return None
         
-    def room_has_players(self, room_id: str) -> bool:
-        """Check if a room has any player characters.
+    def location_has_players(self, location_id: str) -> bool:
+        """Check if a location has any player characters.
         
         Args:
-            room_id: The ID of the room to check
+            location_id: The ID of the location to check
             
         Returns:
-            True if there are players in the room, False otherwise
+            True if there are players in the location, False otherwise
         """
         from mad.core.player import Player
         
-        if room_id not in self.room_characters:
+        if location_id not in self.location_characters:
             return False
             
-        for char_id in self.room_characters[room_id]:
+        for char_id in self.location_characters[location_id]:
             if char_id in self.characters and isinstance(self.characters[char_id], Player):
                 return True
                 
         return False
 
-    async def move_character(self, character_id: str, direction: str) -> Room | None:
+    async def move_character(self, character_id: str, direction: str) -> Location | None:
         """Move a character in a direction if possible."""
-        current_room = self.get_character_room(character_id)
-        if not current_room:
+        current_location = self.get_character_location(character_id)
+        if not current_location:
             return None
 
-        # Get the ID of the destination room
+        # Get the ID of the destination location
         # First check if the exit name matches any in the exit_objects list
         destination_id = None
-        for exit in current_room.exit_objects:
+        for exit in current_location.exit_objects:
             if exit.exit_name == direction:
                 destination_id = exit.destination_id
                 break
         
         # As a backup, check the old-style exits dictionary
         if not destination_id:
-            destination_id = current_room.exits.get(direction)
+            destination_id = current_location.exits.get(direction)
             
         if not destination_id:
             return None
 
-        # Get the destination room
-        destination_room = self.rooms.get(destination_id)
+        # Get the destination location
+        destination_location = self.locations.get(destination_id)
 
-        if not destination_room:
+        if not destination_location:
             return None
 
         # Move the character
-        if not current_room.id in self.room_characters:
-            self.room_characters[current_room.id] = []
-        if not destination_room.id in self.room_characters:
-            self.room_characters[destination_room.id] = []
+        if not current_location.id in self.location_characters:
+            self.location_characters[current_location.id] = []
+        if not destination_location.id in self.location_characters:
+            self.location_characters[destination_location.id] = []
 
         # Get character name for emote messages
         character = self.characters.get(character_id)
         character_name = character.name if character else "Someone"
 
-        # Store previous room for all characters
+        # Store previous location for all characters
         if character:
-            character.previous_room_id = current_room.id
-            character.previous_room_title = current_room.title
+            character.previous_location_id = current_location.id
+            character.previous_location_title = current_location.title
 
-        if character_id in self.room_characters[current_room.id]:
-            # Broadcast departure message to current room before removing character
-            await self.broadcast_to_room(
-                current_room.id, 
+        if character_id in self.location_characters[current_location.id]:
+            # Broadcast departure message to current location before removing character
+            await self.broadcast_to_location(
+                current_location.id, 
                 "emote", 
                 "leaves.", 
                 msg_src=character_name,
                 exclude_character_id=character_id
             )
-            self.room_characters[current_room.id].remove(character_id)
+            self.location_characters[current_location.id].remove(character_id)
             
-        # Add character to destination room
-        self.room_characters[destination_room.id].append(character_id)
+        # Add character to destination location
+        self.location_characters[destination_location.id].append(character_id)
         
-        # Broadcast arrival message to destination room
-        await self.broadcast_to_room(
-            destination_room.id, 
+        # Broadcast arrival message to destination location
+        await self.broadcast_to_location(
+            destination_location.id, 
             "emote", 
             "arrives.", 
             msg_src=character_name,
             exclude_character_id=character_id
         )
 
-        return destination_room
+        return destination_location
 
     # Character management
     async def login_player(self, player_name: str) -> Player:
-        """Create and place a new player in the starting room."""
-        if not self.starting_room_id:
-            raise RuntimeError("No starting room set")
+        """Create and place a new player in the starting location."""
+        if not self.starting_location_id:
+            raise RuntimeError("No starting location set")
 
         player = Player(player_name)
 
-        # Add player to starting room
-        if not self.starting_room_id in self.room_characters:
-            self.room_characters[self.starting_room_id] = []
-        self.room_characters[self.starting_room_id].append(player.id)
+        # Add player to starting location
+        if not self.starting_location_id in self.location_characters:
+            self.location_characters[self.starting_location_id] = []
+        self.location_characters[self.starting_location_id].append(player.id)
 
         # Add player to the characters dictionary
         self.characters[player.id] = player
         
-        # Broadcast arrival message to starting room
-        await self.broadcast_to_room(
-            self.starting_room_id, 
+        # Broadcast arrival message to starting location
+        await self.broadcast_to_location(
+            self.starting_location_id, 
             "emote", 
             "arrives.", 
             msg_src=player.name,
@@ -186,24 +186,24 @@ class World(BaseModel):
             )
         )
 
-        # Show current room
-        current_room = self.get_character_room(player.id)
+        # Show current location
+        current_location = self.get_character_location(player.id)
 
-        # Get characters in the room excluding the player
-        characters_in_room = self.get_characters_in_room(current_room.id, player.id)
+        # Get characters in the location excluding the player
+        characters_in_location = self.get_characters_in_location(current_location.id, player.id)
         
-        # Send room description to player
+        # Send location description to player
         await player.send_message(
-            RoomMessage(
-                title=current_room.title,
-                description=current_room.brief_describe(),
-                characters_present=characters_in_room,
+            LocationMessage(
+                title=current_location.title,
+                description=current_location.brief_describe(),
+                characters_present=characters_in_location,
                 exits=[
                     ExitDescription(
                         name=exit.exit_name,
                         description=exit.exit_description,
                         destination_id=exit.destination_id
-                    ) for exit in current_room.exit_objects
+                    ) for exit in current_location.exit_objects
                 ]
             )
         )
@@ -213,16 +213,16 @@ class World(BaseModel):
     async def logout_player(self, player: Player) -> None:
         """Remove a player from the world."""
         # Broadcast departure message before removing
-        room = self.get_character_room(player.id)
-        if room and player.id in self.room_characters[room.id]:
-            await self.broadcast_to_room(
-                room.id, 
+        location = self.get_character_location(player.id)
+        if location and player.id in self.location_characters[location.id]:
+            await self.broadcast_to_location(
+                location.id, 
                 "emote", 
                 "leaves.", 
                 msg_src=player.name,
                 exclude_character_id=player.id
             )
-            self.room_characters[room.id].remove(player.id)
+            self.location_characters[location.id].remove(player.id)
 
         # Remove from characters dictionary
         if player.id in self.characters:
@@ -257,8 +257,8 @@ class World(BaseModel):
         """Process a character's action."""
         
         if action.action_type == "move":
-            room = await self.move_character(character.id, action.direction)
-            if room is None:
+            location = await self.move_character(character.id, action.direction)
+            if location is None:
                 await character.send_message(
                     SystemMessage(
                         content="You can't go that way.",
@@ -267,18 +267,18 @@ class World(BaseModel):
                     )
                 )
             else:
-                # Get characters in the room excluding the current character
-                characters_in_room = self.get_characters_in_room(room.id, character.id)
+                # Get characters in the location excluding the current character
+                characters_in_location = self.get_characters_in_location(location.id, character.id)
                 
-                # Send room description with all metadata
+                # Send location description with all metadata
                 exits_list = []
-                for exit in room.exit_objects:
+                for exit in location.exit_objects:
                     exit_desc = exit.exit_description
                     
-                    # Check if this exit leads back to the previous room
-                    if (character.previous_room_id and 
-                        exit.destination_id == character.previous_room_id):
-                        exit_desc += f" (Return to \"{character.previous_room_title}\")"
+                    # Check if this exit leads back to the previous location
+                    if (character.previous_location_id and 
+                        exit.destination_id == character.previous_location_id):
+                        exit_desc += f" (Return to \"{character.previous_location_title}\")"
                     
                     exits_list.append(
                         ExitDescription(
@@ -289,28 +289,28 @@ class World(BaseModel):
                     )
                 
                 await character.send_message(
-                    RoomMessage(
-                        title=room.title,
-                        description=room.brief_describe(),
-                        characters_present=characters_in_room,
+                    LocationMessage(
+                        title=location.title,
+                        description=location.brief_describe(),
+                        characters_present=characters_in_location,
                         exits=exits_list
                     )
                 )
         elif action.action_type == "look":
-            room = self.get_character_room(character.id)
-            if room:
-                # Get characters in the room excluding the current character
-                characters_in_room = self.get_characters_in_room(room.id, character.id)
+            location = self.get_character_location(character.id)
+            if location:
+                # Get characters in the location excluding the current character
+                characters_in_location = self.get_characters_in_location(location.id, character.id)
                 
-                # Send detailed room description
+                # Send detailed location description
                 exits_list = []
-                for exit in room.exit_objects:
+                for exit in location.exit_objects:
                     exit_desc = exit.exit_description
                     
-                    # Check if this exit leads back to the previous room
-                    if (character.previous_room_id and 
-                        exit.destination_id == character.previous_room_id):
-                        exit_desc += f" (Return to \"{character.previous_room_title}\")"
+                    # Check if this exit leads back to the previous location
+                    if (character.previous_location_id and 
+                        exit.destination_id == character.previous_location_id):
+                        exit_desc += f" (Return to \"{character.previous_location_title}\")"
                     
                     exits_list.append(
                         ExitDescription(
@@ -321,63 +321,63 @@ class World(BaseModel):
                     )
                 
                 await character.send_message(
-                    RoomMessage(
-                        title=room.title,
-                        description=room.describe(),  # Full description for "look"
-                        characters_present=characters_in_room,
+                    LocationMessage(
+                        title=location.title,
+                        description=location.describe(),  # Full description for "look"
+                        characters_present=characters_in_location,
                         exits=exits_list
                     )
                 )
         elif action.action_type in ("say", "emote") and action.message:
-            room = self.get_character_room(character.id)
-            if room:
-                await self.broadcast_to_room(
-                    room.id, 
+            location = self.get_character_location(character.id)
+            if location:
+                await self.broadcast_to_location(
+                    location.id, 
                     action.action_type, 
                     action.message, 
                     msg_src=character.name
                 )
 
-    def get_characters_in_room(self, room_id: str, exclude_character_id: str | None = None) -> list[str]:
-        """Get names of characters in a specific room.
+    def get_characters_in_location(self, location_id: str, exclude_character_id: str | None = None) -> list[str]:
+        """Get names of characters in a specific location.
         
         Args:
-            room_id: The ID of the room to check
+            location_id: The ID of the location to check
             exclude_character_id: Optional character ID to exclude from the list
             
         Returns:
-            A list of character names in the room
+            A list of character names in the location
         """
-        characters_in_room = []
-        if room_id in self.room_characters:
-            for char_id in self.room_characters[room_id]:
+        characters_in_location = []
+        if location_id in self.location_characters:
+            for char_id in self.location_characters[location_id]:
                 if (exclude_character_id is None or char_id != exclude_character_id) and char_id in self.characters:
-                    characters_in_room.append(self.characters[char_id].name)
-        return characters_in_room
+                    characters_in_location.append(self.characters[char_id].name)
+        return characters_in_location
 
     # Note: Character formatting is now handled by the frontend using the characters_present list
 
-    async def broadcast_to_room(
+    async def broadcast_to_location(
         self, 
-        room_id: str, 
+        location_id: str, 
         action_type: str,  # "say" or "emote"
         message: str, 
         msg_src: str | None = None,
         exclude_character_id: str | None = None
     ) -> None:
-        """Send a message to all characters in a specific room.
+        """Send a message to all characters in a specific location.
         
         Args:
-            room_id: The ID of the room to broadcast to
+            location_id: The ID of the location to broadcast to
             action_type: The type of action ("say" or "emote")
             message: The message content
             msg_src: The source of the message (character name)
             exclude_character_id: Optional character ID to exclude from broadcast
         """
-        if room_id not in self.room_characters:
+        if location_id not in self.location_characters:
             return
         
-        for character_id in self.room_characters[room_id]:
+        for character_id in self.location_characters[location_id]:
             if exclude_character_id and character_id == exclude_character_id:
                 continue
                 

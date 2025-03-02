@@ -410,7 +410,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     term.write('\r\n');
 
                     // Process message based on its type
-                    if (message.message_type === "room") {
+                    if (message.message_type === "location") {
                         // Room messages - green title, list characters and exits
                         term.write(`${BOLD}${GREEN}${message.title}${RESET}\r\n`);
                         await typeWriter(message.description);

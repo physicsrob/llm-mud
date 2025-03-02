@@ -18,7 +18,7 @@ if TYPE_CHECKING:
 
 
 # Configure global idle times
-empty_room_extra_idle = 60  # Extra idle time when no players are in the room
+empty_location_extra_idle = 60  # Extra idle time when no players are in the location
 
 class ActionDecision(CharacterAction):
     """The agent's decision about what action to take"""
@@ -87,11 +87,11 @@ class CharEvent:
 class CharAgentState:
     """State for the character agent."""
     events: list[CharEvent] = field(default_factory=list)
-    room_id: str = ""
-    room_title: str = ""
-    room_description: str = ""
-    room_exits: list[str] = field(default_factory=list)
-    room_characters: list[str] = field(default_factory=list)
+    location_id: str = ""
+    location_title: str = ""
+    location_description: str = ""
+    location_exits: list[str] = field(default_factory=list)
+    location_characters: list[str] = field(default_factory=list)
     last_processed_timestamp: float = field(default_factory=time.time)
     
     def get_new_events(self) -> list[CharEvent]:
@@ -148,29 +148,29 @@ class CharAgent(Character):
         self._state.events.append(CharEvent(idle_until_timestamp=current_time+5))
         self._state.last_processed_timestamp = current_time
         
-        # Initialize room info
-        self._update_room_info()
+        # Initialize location info
+        self._update_location_info()
 
-    def _update_room_info(self) -> None:
-        """Update the agent's knowledge about the current room."""
-        room = self._world.get_character_room(self.id)
-        if not room:
+    def _update_location_info(self) -> None:
+        """Update the agent's knowledge about the current location."""
+        location = self._world.get_character_location(self.id)
+        if not location:
             return
             
-        # Update room information
-        self._state.room_id = room.id
-        self._state.room_title = room.title
-        self._state.room_description = room.brief_description
-        self._state.room_exits = list(room.exits.keys())
+        # Update location information
+        self._state.location_id = location.id
+        self._state.location_title = location.title
+        self._state.location_description = location.brief_description
+        self._state.location_exits = list(location.exits.keys())
         
-        # Get characters in the room excluding self
-        characters_in_room = []
-        if room.id in self._world.room_characters:
-            for char_id in self._world.room_characters[room.id]:
+        # Get characters in the location excluding self
+        characters_in_location = []
+        if location.id in self._world.location_characters:
+            for char_id in self._world.location_characters[location.id]:
                 if char_id != self.id and char_id in self._world.characters:
-                    characters_in_room.append(self._world.characters[char_id].name)
+                    characters_in_location.append(self._world.characters[char_id].name)
         
-        self._state.room_characters = characters_in_room
+        self._state.location_characters = characters_in_location
         
     async def tick(self) -> None:
         """
@@ -201,15 +201,15 @@ class CharAgent(Character):
         
         if decision.action_type != "idle":
             await self._world.process_character_action(self, decision)
-            # Update room info after the action (especially important for movement)
-            self._update_room_info()
+            # Update location info after the action (especially important for movement)
+            self._update_location_info()
 
-        # Check if room has any players, if not add extra idle time
+        # Check if location has any players, if not add extra idle time
         idle_time = decision.idle_duration
-        room = self._world.get_character_room(self.id)
-        if room and not self._world.room_has_players(room.id):
-            print(f"[DEBUG] {self.name}: No players in room, adding extra {empty_room_extra_idle} seconds")
-            idle_time += empty_room_extra_idle
+        location = self._world.get_character_location(self.id)
+        if location and not self._world.location_has_players(location.id):
+            print(f"[DEBUG] {self.name}: No players in location, adding extra {empty_location_extra_idle} seconds")
+            idle_time += empty_location_extra_idle
 
 
         # Create a new event with the agent's decision and new idle time
@@ -262,9 +262,9 @@ def main_prompt(ctx) -> str:
 You prefer to stay in the following locations: {char_agent.preferred_location_ids}
 
 You must choose an action based on your current situation:
-1. Say something to others in the room using the Say action
+1. Say something to others in the location using the Say action
 2. Perform an emote (like "waves" or "looks around") using the Emote action
-3. Move to a connected room using the Move action
+3. Move to a connected location using the Move action
 4. Idle for a period of time when appropriate
 
 IMPORTANT: Do NOT include actions within your Say messages. For example:
@@ -302,11 +302,11 @@ def context_prompt(ctx) -> str:
     state:CharAgentState = char_agent._state
 
     result = f"""\
-You are currently located at "{state.room_title}": {state.room_description}
+You are currently located at "{state.location_title}": {state.location_description}
 
-You can see the following exits: {", ".join(state.room_exits)}
+You can see the following exits: {", ".join(state.location_exits)}
 
-You can see the following people, characters, or entities: {", ".join(state.room_characters)}
+You can see the following people, characters, or entities: {", ".join(state.location_characters)}
 """
 
     # Get new and old events using the helper methods

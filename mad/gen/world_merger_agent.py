@@ -5,7 +5,7 @@ from pydantic_ai.models.openai import OpenAIModel
 from copy import deepcopy
 
 from mad.config import creative_model, OPENROUTER_BASE_URL, OPENROUTER_API_KEY
-from mad.gen.data_model import StoryWorldComponents, WorldMergeMapping, RoomDescription
+from mad.gen.data_model import StoryWorldComponents, WorldMergeMapping, LocationDescription
 
 
 # The prompt that guides world merging
@@ -41,7 +41,7 @@ you will:
    - Each connection is a mapping from source location id to a list of locations ids which are new connections
    - Ensure that by following these connections, a player could reach any location from any other location
 
-4. SELECT A STARTING ROOM:
+4. SELECT A STARTING LOCATION:
    - Choose one location ID that would serve as an ideal starting point for players
    - This should be a location that:
      * Provides a good introduction to the merged world
@@ -99,7 +99,7 @@ All Connections:
 {json.dumps(all_connections, indent=4)}
 
 Please identify duplicate locations, create new connector locations, design new connections, 
-and select a starting room according to your instructions.
+and select a starting location according to your instructions.
 """
     
     result = await merger_agent.run(user_prompt)

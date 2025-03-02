@@ -1,9 +1,9 @@
 import asyncio
 from pathlib import Path
-from mad.core.room import Room, RoomExit
+from mad.core.location import Location, LocationExit
 from mad.core.world import World
 from mad.gen.data_model import (
-    WorldDescription, RoomDescription, RoomDescriptionWithExits, 
+    WorldDescription, LocationDescription, LocationDescriptionWithExits, 
     WorldDesign, StoryWorldComponents
 )
 from .describe_world_agent import describe_world
@@ -11,7 +11,7 @@ from .create_character_agent import create_character_agent
 from .create_world_story_agent import create_story_world
 from .world_merger_agent import merge_story_worlds, apply_merge_plan
 from .world_improver_agent import improve_world_design
-from .room_exit_agent import get_room_exits
+from .location_exit_agent import get_location_exits
 from devtools import debug
 
 import logfire
@@ -24,7 +24,7 @@ async def design_world(theme: str, story_count: int = 10) -> WorldDesign:
     Generate a world design based on the specified theme.
     
     This function handles the first phase of world creation, generating the design only.
-    It does not create the final World/Room objects.
+    It does not create the final World/Location objects.
     
     Args:
         theme: The theme of the world to create
@@ -51,7 +51,7 @@ async def design_world(theme: str, story_count: int = 10) -> WorldDesign:
     debug(story_worlds)
 
     # If we have multiple stories, merge them
-    starting_room_id = None
+    starting_location_id = None
     if len(story_worlds) > 1:
         print("\nMerging story worlds...")
         merge_plan = await merge_story_worlds(story_worlds)
@@ -59,37 +59,37 @@ async def design_world(theme: str, story_count: int = 10) -> WorldDesign:
         # Apply the merge plan
         print("\nApplying merge plan...")
         merged_world = apply_merge_plan(merge_plan, story_worlds)
-        starting_room_id = merge_plan.starting_room_id
+        starting_location_id = merge_plan.starting_location_id
     elif len(story_worlds) == 1:
         merged_world = story_worlds[0]
     else:
         raise ValueError("No story worlds were generated")
     
-    # Generate detailed exits for all rooms
-    print("\nGenerating room exits...")
-    rooms_with_exits_tasks = []
-    for room in merged_world.locations:
-        # Get connected room IDs for this room
-        connected_ids = merged_world.location_connections.get(room.id, [])
+    # Generate detailed exits for all locations
+    print("\nGenerating location exits...")
+    locations_with_exits_tasks = []
+    for location in merged_world.locations:
+        # Get connected location IDs for this location
+        connected_ids = merged_world.location_connections.get(location.id, [])
         task = asyncio.create_task(
-            get_room_exits(room, merged_world.locations, connected_ids)
+            get_location_exits(location, merged_world.locations, connected_ids)
         )
-        rooms_with_exits_tasks.append(task)
+        locations_with_exits_tasks.append(task)
     
     # Wait for all exit generation tasks to complete
-    rooms_with_exits = await asyncio.gather(*rooms_with_exits_tasks)
+    locations_with_exits = await asyncio.gather(*locations_with_exits_tasks)
     
-    # If no starting room was specified or only one story, use the first room
-    if not starting_room_id and rooms_with_exits:
-        starting_room_id = rooms_with_exits[0].id
+    # If no starting location was specified or only one story, use the first location
+    if not starting_location_id and locations_with_exits:
+        starting_location_id = locations_with_exits[0].id
     
     # Create the WorldDesign
     world_design = WorldDesign(
         world_description=world_desc,
-        locations=rooms_with_exits,
+        locations=locations_with_exits,
         characters=merged_world.characters,
         character_locations=merged_world.character_locations,
-        starting_room_id=starting_room_id
+        starting_location_id=starting_location_id
     )
     
     return world_design
@@ -97,10 +97,10 @@ async def design_world(theme: str, story_count: int = 10) -> WorldDesign:
 
 def convert_design_to_world(world_design: WorldDesign) -> World:
     """
-    Convert a world design into a playable World with Room objects.
+    Convert a world design into a playable World with Location objects.
     
     This function handles the second phase of world creation, converting the design
-    into actual World and Room objects that can be used in the game.
+    into actual World and Location objects that can be used in the game.
     
     Args:
         world_design: The WorldDesign to convert
@@ -108,48 +108,48 @@ def convert_design_to_world(world_design: WorldDesign) -> World:
     Returns:
         A World object that can be used in the game
     """
-    # Convert to actual Room objects
-    world_rooms = []
-    for room_with_exits in world_design.locations:
-        # Create RoomExit objects
-        room_exit_objects = [
-            RoomExit(
+    # Convert to actual Location objects
+    world_locations = []
+    for location_with_exits in world_design.locations:
+        # Create LocationExit objects
+        location_exit_objects = [
+            LocationExit(
                 destination_id=exit.destination_id,
                 exit_description=exit.exit_description,
                 exit_name=exit.exit_name
-            ) for exit in room_with_exits.exits
+            ) for exit in location_with_exits.exits
         ]
         
-        # Convert RoomDescriptionWithExits to a Room object
-        room = Room(
-            id=room_with_exits.id,
-            title=room_with_exits.title,
-            brief_description=room_with_exits.brief_description,
-            long_description=room_with_exits.long_description,
-            exits={exit.exit_name: exit.destination_id for exit in room_with_exits.exits},
-            exit_objects=room_exit_objects
+        # Convert LocationDescriptionWithExits to a Location object
+        location = Location(
+            id=location_with_exits.id,
+            title=location_with_exits.title,
+            brief_description=location_with_exits.brief_description,
+            long_description=location_with_exits.long_description,
+            exits={exit.exit_name: exit.destination_id for exit in location_with_exits.exits},
+            exit_objects=location_exit_objects
         )
-        world_rooms.append(room)
+        world_locations.append(location)
     
-    # Create the World object with all rooms
+    # Create the World object with all locations
     world = World(
         title=world_design.world_description.title, 
         description=world_design.world_description.description,
-        rooms={room.id: room for room in world_rooms}
+        locations={location.id: location for location in world_locations}
     )
     
-    # Set the starting room
-    if world_design.starting_room_id:
-        # Verify the starting room exists
-        if world_design.starting_room_id not in world.rooms:
-            raise ValueError(f"Starting room {world_design.starting_room_id} not found in world")
-        world.set_starting_room(world_design.starting_room_id)
-    elif world_rooms:
-        # If no starting room was specified, use the first room
-        world.set_starting_room(world_rooms[0].id)
+    # Set the starting location
+    if world_design.starting_location_id:
+        # Verify the starting location exists
+        if world_design.starting_location_id not in world.locations:
+            raise ValueError(f"Starting location {world_design.starting_location_id} not found in world")
+        world.set_starting_location(world_design.starting_location_id)
+    elif world_locations:
+        # If no starting location was specified, use the first location
+        world.set_starting_location(world_locations[0].id)
     else:
         # This should never happen
-        raise ValueError("No rooms were created")
+        raise ValueError("No locations were created")
     
     return world
 
@@ -191,45 +191,45 @@ async def improve_world_design_iteration(world_design: WorldDesign) -> WorldDesi
     components = StoryWorldComponents(
         characters=world_design.characters,
         locations=[
-            RoomDescription(
-                id=room.id,
-                title=room.title,
-                brief_description=room.brief_description,
-                long_description=room.long_description
-            ) for room in world_design.locations
+            LocationDescription(
+                id=location.id,
+                title=location.title,
+                brief_description=location.brief_description,
+                long_description=location.long_description
+            ) for location in world_design.locations
         ],
         character_locations=world_design.character_locations,  # Preserve character locations
         location_connections={
-            room.id: [exit.destination_id for exit in room.exits]
-            for room in world_design.locations
+            location.id: [exit.destination_id for exit in location.exits]
+            for location in world_design.locations
         }
     )
     
     # Run the improvement process
-    print("\nImproving world design room-by-room...")
+    print("\nImproving world design location-by-location...")
     improved_world = await improve_world_design(components)
     
-    # Generate detailed exits for all rooms
-    print("\nRecreating room exits...")
-    rooms_with_exits_tasks = []
-    for room in improved_world.locations:
-        # Get connected room IDs for this room
-        connected_ids = improved_world.location_connections.get(room.id, [])
+    # Generate detailed exits for all locations
+    print("\nRecreating location exits...")
+    locations_with_exits_tasks = []
+    for location in improved_world.locations:
+        # Get connected location IDs for this location
+        connected_ids = improved_world.location_connections.get(location.id, [])
         task = asyncio.create_task(
-            get_room_exits(room, improved_world.locations, connected_ids)
+            get_location_exits(location, improved_world.locations, connected_ids)
         )
-        rooms_with_exits_tasks.append(task)
+        locations_with_exits_tasks.append(task)
     
     # Wait for all exit generation tasks to complete
-    rooms_with_exits = await asyncio.gather(*rooms_with_exits_tasks)
+    locations_with_exits = await asyncio.gather(*locations_with_exits_tasks)
     
     # Create the improved WorldDesign
     improved_design = WorldDesign(
         world_description=world_design.world_description,
-        locations=rooms_with_exits,
+        locations=locations_with_exits,
         characters=world_design.characters,
         character_locations=improved_world.character_locations,  # Preserve character locations
-        starting_room_id=world_design.starting_room_id
+        starting_location_id=world_design.starting_location_id
     )
     
     return improved_design

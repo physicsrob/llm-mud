@@ -4,7 +4,7 @@ import random
 from pydantic_ai import Agent
 from pydantic_ai.models.openai import OpenAIModel
 
-from mad.core.room import Room
+from mad.core.location import Location
 from mad.core.char_agent import CharAgent
 from mad.gen.data_model import WorldDescription
 from mad.config import creative_model, OPENROUTER_BASE_URL, OPENROUTER_API_KEY
@@ -14,8 +14,8 @@ class CharacterGenerationContext(BaseModel):
     """Context information for generating a character."""
     world_title: str = Field(description="The title of the game world")
     world_description: str = Field(description="Brief description of the game world")
-    room_title: str = Field(description="The title of the room where character lives")
-    room_description: str = Field(description="Description of the room where character lives")
+    location_title: str = Field(description="The title of the location where character lives")
+    location_description: str = Field(description="Description of the location where character lives")
     existing_char_descriptions: list[str] = Field(description="A list of existing characters in the world")
 
 
@@ -33,7 +33,7 @@ Consider the following when designing the character:
 The character should:
 - Be interesting and memorable
 - Have clear, understandable motivations and goals
-- Be appropriate for the room and world they inhabit
+- Be appropriate for the location and world they inhabit
 - Have a personality that drives interesting interactions
 - Avoid generic or clichéd characterizations
 - Have some depth or complexity to them
@@ -44,14 +44,14 @@ Design a character that players would enjoy interacting with and who adds to the
 
 
 async def create_character_agent(
-    world_desc: WorldDescription, room: Room, world: "World", existing_chars: list[CharAgent]
+    world_desc: WorldDescription, location: Location, world: "World", existing_chars: list[CharAgent]
 ) -> CharAgent:
     """
-    Create a character agent based on the world and room descriptions.
+    Create a character agent based on the world and location descriptions.
     
     Args:
         world_desc: Description of the game world
-        room: The room where the character will be placed
+        location: The location where the character will be placed
         world: The game world object
         
     Returns:
@@ -76,8 +76,8 @@ async def create_character_agent(
     context = CharacterGenerationContext(
         world_title=world_desc.title,
         world_description=world_desc.description,
-        room_title=room.title,
-        room_description=room.brief_description,
+        location_title=location.title,
+        location_description=location.brief_description,
         existing_char_descriptions = [char.brief_description for char in existing_chars]
     )
     

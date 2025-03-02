@@ -2,22 +2,22 @@ from pydantic import BaseModel, Field
 from pathlib import Path
 
 
-class RoomDescription(BaseModel):
+class LocationDescription(BaseModel):
     id: str = Field(
         description="Typically the title, but with spaces replaced with underscores, all lowercase, etc"
     )
-    title: str = Field(description="The name/title of the room")
+    title: str = Field(description="The name/title of the location")
     brief_description: str = Field(
-        description="A short description shown when entering the room"
+        description="A short description shown when entering the location"
     )
     long_description: str = Field(
-        description="A detailed description shown when examining the room"
+        description="A detailed description shown when examining the location"
     )
 
 
-class RoomExit(BaseModel):
+class LocationExit(BaseModel):
     destination_id: str = Field(
-        description="The room id for the destination"
+        description="The location id for the destination"
     )
     exit_description: str = Field(
         description="A short, one line or less, description of the exit as viewed from the current location."
@@ -27,14 +27,14 @@ class RoomExit(BaseModel):
     )
 
 
-class RoomExits(BaseModel):
-    exits: list[RoomExit] = Field(
-        description="A list of exits that connect this room to other rooms."
+class LocationExits(BaseModel):
+    exits: list[LocationExit] = Field(
+        description="A list of exits that connect this location to other locations."
     )
 
-class RoomDescriptionWithExits(RoomDescription):
-    exits: list[RoomExit] = Field(
-        description="A list of exits that connect this room to other rooms."
+class LocationDescriptionWithExits(LocationDescription):
+    exits: list[LocationExit] = Field(
+        description="A list of exits that connect this location to other locations."
     )
 
 
@@ -67,7 +67,7 @@ class StoryWorldComponents(BaseModel):
         description="List of characters that appear in the story",
         default_factory=list
     )
-    locations: list[RoomDescription] = Field(
+    locations: list[LocationDescription] = Field(
         description="List of important locations where major plot points take place in the story",
         default_factory=list
     )
@@ -89,7 +89,7 @@ class WorldMergeMapping(BaseModel):
         default_factory=dict
     )
     
-    new_locations: list[RoomDescription] = Field(
+    new_locations: list[LocationDescription] = Field(
         description="List of new locations useful for merging the many stories together",
         default_factory=list
     )
@@ -98,19 +98,18 @@ class WorldMergeMapping(BaseModel):
         description="New connections to add between locations to ensure all stories are connected. For each location id, a list of location ids which are new connections.",
         default_factory=dict
     )
-    starting_room_id: str = Field(
-        description="The ID of the room that should be the starting point for players"
+    starting_location_id: str = Field(
+        description="The ID of the location that should be the starting point for players"
     )
 
 
-class RoomImprovementPlan(BaseModel):
-    """Plan for improving a single room's design by preventing it from having too many connections."""
+class LocationImprovementPlan(BaseModel):
+    """Plan for improving a single location's design by preventing it from having too many connections."""
     
-    new_locations: list[RoomDescription] = Field(
-        description="New intermediate locations to help distribute connections from this room",
+    new_locations: list[LocationDescription] = Field(
+        description="Replacement locations to help distribute connections from this location",
         default_factory=list
     )
-    
     updated_connections: dict[str, list[str]] = Field(
         description="Updated connections between locations. For each location id, a list of location ids it connects to.",
         default_factory=dict
@@ -120,12 +119,12 @@ class RoomImprovementPlan(BaseModel):
 class WorldDesign(BaseModel):
     """
     A complete design for a world, representing the intermediate stage between
-    the initial world description and the final World object with Room instances.
+    the initial world description and the final World object with Location instances.
     """
     world_description: WorldDescription = Field(
         description="The overall description of the game world"
     )
-    locations: list[RoomDescriptionWithExits] = Field(
+    locations: list[LocationDescriptionWithExits] = Field(
         description="List of all locations in the world with their exits",
         default_factory=list
     )
@@ -137,6 +136,6 @@ class WorldDesign(BaseModel):
         description="For each character id, a list of location ids you will likely find the character",
         default_factory=dict
     )
-    starting_room_id: str = Field(
-        description="The ID of the room that should be the starting point for players"
+    starting_location_id: str = Field(
+        description="The ID of the location that should be the starting point for players"
     )

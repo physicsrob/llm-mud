@@ -33,7 +33,7 @@ DIRECTION_ABBREVIATIONS = {
 MOVEMENT_VERBS = {"go", "move", "walk", "run", "head", "travel", "leave", "exit"}
 
 # Look command verbs and full phrases
-LOOK_COMMANDS = {"l", "look", "look around", "describe", "examine", "examine room", "where am i"}
+LOOK_COMMANDS = {"l", "look", "look around", "describe", "examine", "examine location", "where am i"}
 
 # Idle command verbs
 IDLE_COMMANDS = {"idle", "wait", "rest"}
@@ -88,8 +88,8 @@ async def parse(world: "World", player: "Player", command_input: str) -> ParseRe
     Returns:
         ParseResult containing either a PlayerAction or error message
     """
-    room = world.get_character_room(player.id)
-    available_exits = room.exits.keys()
+    location = world.get_character_location(player.id)
+    available_exits = location.exits.keys()
     
     # Handle empty commands
     if not command_input.strip():

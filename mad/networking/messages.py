@@ -7,16 +7,16 @@ class BaseMessage(BaseModel):
     message_type: str = Field(description="Discriminator field for message type")
 
 class ExitDescription(BaseModel):
-    """Exit description for room messages."""
+    """Exit description for location messages."""
     name: str
     description: str
     destination_id: str
 
-class RoomMessage(BaseMessage):
-    """Room description message."""
-    message_type: Literal["room"] = "room"
-    title: str  # Room name
-    description: str  # Room description
+class LocationMessage(BaseMessage):
+    """Location description message."""
+    message_type: Literal["location"] = "location"
+    title: str  # Location name
+    description: str  # Location description
     characters_present: list[str] = Field(default_factory=list)
     exits: list[ExitDescription] = Field(default_factory=list)  # Detailed exit information
 

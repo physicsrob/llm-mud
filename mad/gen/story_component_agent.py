@@ -3,10 +3,11 @@ from pydantic import BaseModel, Field
 from devtools import debug
 from pydantic_ai import Agent
 from pydantic_ai.models.openai import OpenAIModel
+import json
 
-from mad.config import creative_model_instance, story_model_instance
+from mad.config import creative_model_instance, story_model_instance, location_model_instance
 from mad.core.char_agent import CharAgent
-from mad.gen.data_model import RoomDescription, StoryWorldComponents, CharacterDescription
+from mad.gen.data_model import LocationDescription, StoryWorldComponents, CharacterDescription
 
 
 # The prompt that guides basic character and location extraction
@@ -31,16 +32,7 @@ PART 2: LOCATION ANALYSIS
    - A minimal placeholder long description (just enough to identify the location)
 3. Additionally, identify and invent if necessary, 1-5 locations which connect the key locations together.
 
-PART 3: LOCATION CONNECTIONS
-1. Determine which locations are connected to each other in the story
-2. For each location, list all the other locations it directly connects to
-3. These connections should:
-   - Reflect paths or routes mentioned in the story
-   - Include logical connections between adjacent locations
-   - Ensure that all locations are connected to at least one other location
-   - Create a network where all locations can be reached from any other location
-
-Focus only on extracting the essential information. Detailed descriptions will be generated separately.
+Your result should include at least 3 characters, and at least 3 locations.
 """
 
 # The prompt for generating detailed character descriptions
@@ -98,6 +90,26 @@ Your task is to create a brief location description for a setting in a story. Th
 Write a concise but evocative description that immediately gives a sense of this location.
 """
 
+# The prompt specifically for analyzing location connections
+location_connections_prompt = """
+You are a master literary analyst specializing in spatial relationships and narrative geography.
+
+Your task is to analyze the story and identify all connections between locations. For each location:
+
+1. Determine which other locations it directly connects to based on the story
+2. These connections should:
+   - Reflect explicit paths or routes mentioned in the story
+   - Include logical connections between adjacent locations
+   - Ensure that all locations are connected to at least one other location
+   - Create a network where all locations can be reached from any other location
+
+You must return a single dictionary where:
+- Every location id appears exactly once as a key
+- Every value is a list of location IDs that the key locations connects to
+
+IMPORTANT: Every location must have at least one connection to ensure the world is fully navigable.
+
+"""
 
 async def character_description_agent(story_content: str, character_name: str) -> str:
     """
@@ -227,6 +239,127 @@ async def location_brief_description_agent(story_content: str, location_title: s
     return result.data
 
 
+
+class _LocationConnections(BaseModel):
+    location_connections: dict[str, list[str]] = Field(
+        description="For each location id, a list of location ids which are connected",
+        default_factory=dict
+    )
+
+class _CharacterLocations(BaseModel):
+    character_locations: dict[str, list[str]] = Field(
+        description="For each character name, a list of location ids where they are likely to be found",
+        default_factory=dict
+    )
+
+# The prompt specifically for analyzing character locations
+character_locations_prompt = """
+You are a master literary analyst specializing in character geography and spatial positioning.
+
+Your task is to analyze the story and identify the locations where each character is typically found or would likely visit. For each character:
+
+1. Determine which locations they are associated with or where they would likely be encountered
+2. This should be based on:
+   - Explicit mentions of where characters are located in the story
+   - Implied locations based on character activities and scenes
+   - Logical deductions about where characters spend their time or would visit
+
+You must return a dictionary where:
+- Every character name appears exactly once as a key
+- Every value is a list of location IDs where that character might be found, with their primary location listed first
+- Characters should have 1-3 associated locations, depending on their mobility in the story
+
+IMPORTANT: Every character must be assigned to at least one valid location ID.
+"""
+
+async def identify_location_connections(story_content: str, locations: list[LocationDescription]) -> dict[str, list[str]]:
+    """
+    Identify connections between locations in a story.
+    
+    Args:
+        story_content: The full story text
+        locations: List of locations extracted from the story
+        
+    Returns:
+        A dictionary mapping location IDs to lists of connected location IDs
+    """
+    print("  Identifying location connections...")
+    
+    # Create a string representation of all locations for the prompt
+    location_text = json.dumps([{"id": loc.id, "title": loc.title, "description": loc.brief_description} for loc in locations], indent=4)
+    
+    # Create the connection identification agent
+    connection_agent = Agent(
+        model=location_model_instance,
+        result_type=_LocationConnections,
+        system_prompt=location_connections_prompt,
+        retries=2,
+        model_settings={"temperature": 0.3},  # Lower temperature for more consistent analysis
+    )
+    
+    user_prompt = f"""
+    Analyze this story and identify all connections between the following locations:
+    
+    STORY:
+    {story_content}
+
+    LOCATIONS:
+    {location_text}
+    """
+    
+    result = await connection_agent.run(user_prompt)
+    connections = result.data.location_connections
+
+    print(f"  ✓ Identified {sum(len(dests) for dests in connections.values())} location connections")
+    return connections
+
+async def identify_character_locations(story_content: str, characters: list[CharacterDescription], locations: list[LocationDescription]) -> dict[str, list[str]]:
+    """
+    Identify the locations where each character is likely to be found in a story.
+    
+    Args:
+        story_content: The full story text
+        characters: List of characters extracted from the story
+        locations: List of locations extracted from the story
+        
+    Returns:
+        A dictionary mapping character names to lists of location IDs where they might be found
+    """
+    print("  Identifying character locations...")
+    
+    # Create a string representation of all characters and locations for the prompt
+    character_text = json.dumps([{"name": char.name, "description": char.description} for char in characters], indent=4)
+    location_text = json.dumps([{"id": loc.id, "title": loc.title, "description": loc.brief_description} for loc in locations], indent=4)
+    
+    # Create the character location identification agent
+    char_location_agent = Agent(
+        model=location_model_instance,
+        result_type=_CharacterLocations,
+        system_prompt=character_locations_prompt,
+        retries=2,
+        model_settings={"temperature": 0.3},  # Lower temperature for more consistent analysis
+    )
+    
+    user_prompt = f"""
+    Analyze this story and identify all likely locations for each character:
+    
+    STORY:
+    {story_content}
+
+    CHARACTERS:
+    {character_text}
+    
+    LOCATIONS:
+    {location_text}
+    """
+    
+    result = await char_location_agent.run(user_prompt)
+    char_locations = result.data.character_locations
+
+    total_locations = sum(len(locs) for locs in char_locations.values())
+    print(f"  ✓ Identified {total_locations} potential locations for {len(char_locations)} characters")
+    return char_locations
+
 async def extract_story_components(story_title: str, story_content: str) -> StoryWorldComponents:
     """
     Extract and describe characters and key locations from a story.
@@ -263,9 +396,13 @@ async def extract_story_components(story_title: str, story_content: str) -> Stor
     components = result.data
     if result._state.retries > 1:
         debug(result)
-   
-    debug(components)
-    exit()
+    
+    # Step 1.5: Identify location connections separately
+    components.location_connections = await identify_location_connections(story_content, components.locations)
+    
+    # Step 1.6: Identify character locations separately
+    components.character_locations = await identify_character_locations(story_content, components.characters, components.locations)
+    
     print(f"✓ Identified {len(components.characters)} characters and {len(components.locations)} locations")
     
     # Step 2: Generate detailed descriptions concurrently
