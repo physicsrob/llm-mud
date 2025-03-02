@@ -5,7 +5,14 @@ from pydantic_ai import Agent
 from copy import deepcopy
 
 from mad.config import location_model_instance 
-from mad.gen.data_model import StoryWorldComponents, LocationImprovementPlan, LocationDescription
+from mad.gen.data_model import (
+    StoryWorldComponents, 
+    LocationImprovementPlan, 
+    LocationDescription, 
+    WorldDesign,
+    LocationDescriptionWithExits,
+    LocationExit
+)
 
 
 def find_location_by_id(story_components: StoryWorldComponents, location_id: str) -> LocationDescription | None:
@@ -426,24 +433,32 @@ async def improve_single_location_and_apply(
     
     return improved_components, updated_starting_id
 
-async def improve_world_design(
-    story_components: StoryWorldComponents, 
-    starting_location_id: str | None = None
-) -> tuple[StoryWorldComponents, str | None]:
+async def improve_world_design(world_design: WorldDesign) -> None:
     """
     Improve a world design by ensuring no location has too many connections.
-    This function processes locations one-by-one and applies improvements incrementally.
+    This function processes locations one-by-one and applies improvements incrementally,
+    modifying the provided WorldDesign object in place.
     
     Args:
-        story_components: A StoryWorldComponents object containing locations and their connections
-        starting_location_id: The current starting location ID
-        
-    Returns:
-        Tuple of (Improved StoryWorldComponents object with balanced connections, potentially updated starting location ID)
+        world_design: A WorldDesign object to improve
     """
-    # Create working copy of the world components
-    working_components = deepcopy(story_components)
-    updated_starting_id = starting_location_id
+    # Convert LocationDescriptionWithExits to regular LocationDescription and build components
+    story_components = StoryWorldComponents(
+        locations=[
+            LocationDescription(
+                id=loc.id,
+                title=loc.title,
+                brief_description=loc.brief_description,
+                long_description=loc.long_description
+            ) for loc in world_design.locations
+        ],
+        location_connections={
+            loc.id: [exit.destination_id for exit in loc.exits]
+            for loc in world_design.locations
+        },
+        characters=world_design.characters,
+        character_locations=world_design.character_locations
+    )
     
     # Track all new locations created during the improvement process
     all_new_location_ids = set()
@@ -455,7 +470,7 @@ async def improve_world_design(
     while iteration <= max_iterations:
         # Find all overcrowded locations
         overcrowded_locations = []
-        for source_id, dest_ids in working_components.location_connections.items():
+        for source_id, dest_ids in story_components.location_connections.items():
             if len(dest_ids) > 4:
                 overcrowded_locations.append((source_id, len(dest_ids)))
         
@@ -473,27 +488,32 @@ async def improve_world_design(
         print(f"Improving location {location_id} with {connection_count} connections")
         
         # Capture existing location IDs before improvement
-        existing_location_ids = {loc.id for loc in working_components.locations}
+        existing_location_ids = {loc.id for loc in story_components.locations}
         
         # Improve this single location and apply changes
         improved_components, updated_starting_id = await improve_single_location_and_apply(
-            working_components, 
+            story_components, 
             location_id,
-            updated_starting_id
+            world_design.starting_location_id
         )
+        
+        # Update starting location if needed
+        if updated_starting_id != world_design.starting_location_id:
+            print(f"Updating starting location from {world_design.starting_location_id} to {updated_starting_id}")
+            world_design.starting_location_id = updated_starting_id
         
         # Find new locations added in this iteration
         new_ids_this_iteration = {loc.id for loc in improved_components.locations} - existing_location_ids
         all_new_location_ids.update(new_ids_this_iteration)
         
         # Check if any improvements were made
-        if len(improved_components.locations) > len(working_components.locations):
+        if len(improved_components.locations) > len(story_components.locations):
             # New locations were added
-            new_location_count = len(improved_components.locations) - len(working_components.locations)
+            new_location_count = len(improved_components.locations) - len(story_components.locations)
             print(f"Added {new_location_count} new intermediate locations: {', '.join(new_ids_this_iteration)}")
             
             # Get connection counts for old and new rooms
-            old_room_connection_count = len(working_components.location_connections.get(location_id, []))
+            old_room_connection_count = len(story_components.location_connections.get(location_id, []))
             old_room_name = next((loc.title for loc in story_components.locations if loc.id == location_id), "Unknown")
             
             # Print old room and its connection count
@@ -507,10 +527,10 @@ async def improve_world_design(
                 print(f"  {new_id} ({new_room_name}) - {new_room_connections} connections")
         
         # Update our working copy
-        working_components = improved_components
+        story_components = improved_components
         
         # Get connection summary with the new locations highlighted
-        summary = get_connection_summary(working_components, new_ids_this_iteration)
+        summary = get_connection_summary(story_components, new_ids_this_iteration)
         
         print("\nCurrent connection counts:")
         for loc in summary["location_details"]:
@@ -533,11 +553,42 @@ async def improve_world_design(
         print("Reached maximum iteration count. Some locations may still be overcrowded.")
     
     # Print final summary
-    final_summary = get_connection_summary(working_components)
+    final_summary = get_connection_summary(story_components)
     print(f"\nFinal world state:")
     print(f"Total rooms: {final_summary['total_rooms']}")
     print(f"Total connections: {final_summary['total_connections']}")
     
-    return working_components, updated_starting_id
+    # Update the original WorldDesign with the improved components
+    # First, clear existing locations
+    world_design.locations.clear()
+    
+    # Create LocationDescriptionWithExits objects from the improved components
+    for loc in story_components.locations:
+        # Get the connections for this location
+        connections = story_components.location_connections.get(loc.id, [])
+        
+        # Create exit objects
+        exits = []
+        for dest_id in connections:
+            # Find the destination location to get its title
+            dest_loc = next((l for l in story_components.locations if l.id == dest_id), None)
+            if dest_loc:
+                exit_name = dest_loc.title.lower()
+                exit_desc = f"There is a path to {dest_loc.title}"
+                
+                exits.append(LocationExit(
+                    destination_id=dest_id,
+                    exit_name=exit_name,
+                    exit_description=exit_desc
+                ))
+        
+        # Create the location with exits
+        world_design.locations.append(LocationDescriptionWithExits(
+            id=loc.id,
+            title=loc.title,
+            brief_description=loc.brief_description,
+            long_description=loc.long_description,
+            exits=exits
+        ))
 
 

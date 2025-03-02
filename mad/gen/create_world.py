@@ -175,63 +175,49 @@ async def create_world(theme: str, story_count: int = 10) -> World:
     return world
 
 
-async def improve_world_design_iteration(world_design: WorldDesign) -> WorldDesign:
+async def improve_world_design_iteration(world_design: WorldDesign) -> None:
     """
     Improve an existing world design by running it through the improvement process again.
+    Modifies the provided world_design in place.
     
     Args:
-        world_design: The WorldDesign to improve
-        
-    Returns:
-        An improved WorldDesign
+        world_design: The WorldDesign to improve, modified in place
     """
-    # Convert WorldDesign to StoryWorldComponents format
-    components = StoryWorldComponents(
-        characters=world_design.characters,
-        locations=[
-            LocationDescription(
-                id=location.id,
-                title=location.title,
-                brief_description=location.brief_description,
-                long_description=location.long_description
-            ) for location in world_design.locations
-        ],
-        character_locations=world_design.character_locations,  # Preserve character locations
-        location_connections={
-            location.id: [exit.destination_id for exit in location.exits]
-            for location in world_design.locations
-        }
-    )
-    
-    # Run the improvement process
+    # Run the improvement process (modifies the design in-place)
     print("\nImproving world design location-by-location...")
-    improved_world, updated_starting_id = await improve_world_design(
-        components, 
-        world_design.starting_location_id
-    )
+    await improve_world_design(world_design)
     
     # Generate detailed exits for all locations
     print("\nRecreating location exits...")
     locations_with_exits_tasks = []
-    for location in improved_world.locations:
+    for location in world_design.locations:
         # Get connected location IDs for this location
-        connected_ids = improved_world.location_connections.get(location.id, [])
+        connected_ids = [exit.destination_id for exit in location.exits]
         task = asyncio.create_task(
-            get_location_exits(location, improved_world.locations, connected_ids)
+            get_location_exits(
+                LocationDescription(
+                    id=location.id,
+                    title=location.title,
+                    brief_description=location.brief_description,
+                    long_description=location.long_description
+                ),
+                [
+                    LocationDescription(
+                        id=loc.id,
+                        title=loc.title,
+                        brief_description=loc.brief_description,
+                        long_description=loc.long_description
+                    ) for loc in world_design.locations
+                ],
+                connected_ids
+            )
         )
         locations_with_exits_tasks.append(task)
     
     # Wait for all exit generation tasks to complete
     locations_with_exits = await asyncio.gather(*locations_with_exits_tasks)
     
-    # Create the improved WorldDesign
-    improved_design = WorldDesign(
-        world_description=world_design.world_description,
-        locations=locations_with_exits,
-        characters=world_design.characters,
-        character_locations=improved_world.character_locations,  # Preserve character locations
-        starting_location_id=updated_starting_id or world_design.starting_location_id
-    )
-    
-    return improved_design
+    # Update the locations in the world design
+    world_design.locations.clear()
+    world_design.locations.extend(locations_with_exits)
         

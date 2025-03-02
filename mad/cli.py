@@ -149,8 +149,8 @@ def improve_world(design_file: str, output_file: str):
         
         design = WorldDesign.model_validate_json(design_json)
         
-        # Improve the design
-        improved_design = asyncio.run(improve_world_design_iteration(design))
+        # Improve the design (modifies in place)
+        asyncio.run(improve_world_design_iteration(design))
         
         # Add .json extension if not present
         if not output_file.endswith(".json"):
@@ -158,7 +158,7 @@ def improve_world(design_file: str, output_file: str):
             
         # Save the improved design
         with open(output_file, 'w') as f:
-            f.write(improved_design.model_dump_json(indent=2))
+            f.write(design.model_dump_json(indent=2))
             
         click.echo(f"Improved world design saved to {output_file}")
     except FileNotFoundError:
