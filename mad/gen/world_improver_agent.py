@@ -1,10 +1,96 @@
 from devtools import debug
 import json
+import random
 from pydantic_ai import Agent
 from copy import deepcopy
 
 from mad.config import location_model_instance 
 from mad.gen.data_model import StoryWorldComponents, LocationImprovementPlan, LocationDescription
+
+
+def find_location_by_id(story_components: StoryWorldComponents, location_id: str) -> LocationDescription | None:
+    """
+    Helper function to find a location object by its ID.
+    
+    Args:
+        story_components: A StoryWorldComponents object containing locations
+        location_id: The ID of the location to find
+        
+    Returns:
+        LocationDescription object if found, None otherwise
+    """
+    for location in story_components.locations:
+        if location.id == location_id:
+            return location
+    return None
+
+
+def ensure_bidirectional_connections(components: StoryWorldComponents, source_id: str, dest_id: str) -> None:
+    """
+    Ensures that a bidirectional connection exists between two locations.
+    
+    Args:
+        components: The StoryWorldComponents to modify
+        source_id: The first location ID
+        dest_id: The second location ID
+    """
+    # Initialize connection lists if they don't exist
+    if source_id not in components.location_connections:
+        components.location_connections[source_id] = []
+    if dest_id not in components.location_connections:
+        components.location_connections[dest_id] = []
+    
+    # Add bidirectional connections if they don't exist
+    if dest_id not in components.location_connections[source_id]:
+        components.location_connections[source_id].append(dest_id)
+    if source_id not in components.location_connections[dest_id]:
+        components.location_connections[dest_id].append(source_id)
+
+
+def get_connection_summary(components: StoryWorldComponents, new_ids: set[str] = None) -> dict:
+    """
+    Generates a summary of connections for all locations in the components.
+    
+    Args:
+        components: The StoryWorldComponents to analyze
+        new_ids: Optional set of location IDs to highlight as new
+        
+    Returns:
+        Dictionary with connection counts and statistics
+    """
+    # Calculate connection counts for all locations
+    all_connection_counts = {
+        loc_id: len(connections) 
+        for loc_id, connections in components.location_connections.items()
+    }
+    
+    # Find overcrowded locations
+    overcrowded = {k: v for k, v in all_connection_counts.items() if v > 4}
+    
+    # Calculate total rooms and connections
+    total_rooms = len(components.locations)
+    # Divide by 2 since connections are bidirectional
+    total_connections = sum(len(connections) for connections in components.location_connections.values()) // 2
+    
+    # Create a list of locations with their names and connection counts, sorted by ID
+    location_details = []
+    for loc_id, count in sorted(all_connection_counts.items(), key=lambda x: x[0]):
+        loc_name = next((loc.title for loc in components.locations if loc.id == loc_id), "Unknown")
+        is_new = new_ids and loc_id in new_ids
+        location_details.append({
+            "id": loc_id,
+            "name": loc_name,
+            "connections": count,
+            "is_new": is_new
+        })
+    
+    return {
+        "all_counts": all_connection_counts,
+        "overcrowded": overcrowded,
+        "total_rooms": total_rooms,
+        "total_connections": total_connections,
+        "location_details": location_details
+    }
 
 
 # The prompt that guides world improvement for a single location
@@ -76,11 +162,7 @@ async def improve_single_location(
         )
     
     # Find the location details
-    location_details = None
-    for location in story_components.locations:
-        if location.id == location_id:
-            location_details = location
-            break
+    location_details = find_location_by_id(story_components, location_id)
     
     if not location_details:
         raise ValueError(f"Location with ID {location_id} not found in world components")
@@ -117,6 +199,169 @@ Here are the details of the connected locations:
     result = await improver_agent.run(user_prompt)
     plan = result.data
     return plan
+
+
+def remove_old_location_and_connections(
+    components: StoryWorldComponents,
+    location_id: str
+) -> list[str]:
+    """
+    Remove a location and all its connections from the world components.
+    
+    Args:
+        components: StoryWorldComponents to modify in place
+        location_id: ID of the location to remove
+        
+    Returns:
+        List of IDs that connected to the removed location
+    """
+    # Delete the old location
+    components.locations = [loc for loc in components.locations if loc.id != location_id]
+    
+    # Delete all connections from the old location
+    if location_id in components.location_connections:
+        del components.location_connections[location_id]
+    
+    # Remove connections to the old location and track which locations had them
+    locations_connecting_to_old = []
+    for loc_id, connections in list(components.location_connections.items()):
+        if location_id in connections:
+            components.location_connections[loc_id].remove(location_id)
+            locations_connecting_to_old.append(loc_id)
+            
+    return locations_connecting_to_old
+
+
+def handle_missing_connections(
+    new_locations: list[LocationDescription],
+    updated_connections: dict[str, list[str]],
+    original_connections: list[str]
+) -> dict[str, list[str]]:
+    """
+    Handle connections that might be missing from the plan.
+    
+    Args:
+        new_locations: List of new LocationDescription objects
+        updated_connections: Dictionary mapping source IDs to lists of destination IDs
+        original_connections: List of original connections from the old location
+        
+    Returns:
+        Updated connections dictionary with missing connections assigned
+    """
+    # Make a copy to avoid modifying the original
+    updated_connections = deepcopy(updated_connections)
+    
+    # Track all connections to ensure all original ones are accounted for
+    planned_connections = set()
+    new_location_ids = [loc.id for loc in new_locations]
+    
+    # Check all planned outgoing connections from the new locations
+    for source_id in new_location_ids:
+        if source_id in updated_connections:
+            for dest_id in updated_connections[source_id]:
+                planned_connections.add(dest_id)
+    
+    # Check all planned incoming connections to the new locations
+    for source_id, destinations in updated_connections.items():
+        if source_id not in new_location_ids:
+            for dest_id in destinations:
+                if dest_id in new_location_ids:
+                    planned_connections.add(source_id)
+    
+    # Check if all original connections are accounted for in the plan
+    missing_connections = []
+    for conn in original_connections:
+        if conn not in planned_connections:
+            missing_connections.append(conn)
+    
+    # If there are missing connections, randomly assign them to one of the new locations
+    if missing_connections:
+        print(f"Warning: Plan is missing {len(missing_connections)} connections: {missing_connections}")
+        print("Randomly assigning missing connections to the new locations")
+        
+        # Ensure both new locations have connection entries
+        for loc_id in new_location_ids:
+            if loc_id not in updated_connections:
+                updated_connections[loc_id] = []
+        
+        # Assign each missing connection to a random new location
+        for conn in missing_connections:
+            # Pick one of the new locations randomly
+            random_loc = random.choice(new_location_ids)
+            if random_loc not in updated_connections:
+                updated_connections[random_loc] = []
+            
+            if conn not in updated_connections[random_loc]:
+                updated_connections[random_loc].append(conn)
+                print(f"  - Assigned missing connection {conn} to {random_loc}")
+    
+    return updated_connections
+
+
+def add_new_locations_and_connections(
+    components: StoryWorldComponents,
+    new_locations: list[LocationDescription],
+    updated_connections: dict[str, list[str]],
+    locations_connecting_to_old: list[str]
+) -> None:
+    """
+    Add new locations and their connections to the world components.
+    
+    Args:
+        components: StoryWorldComponents to modify in place
+        new_locations: List of new LocationDescription objects to add
+        updated_connections: Dictionary mapping source IDs to lists of destination IDs
+        locations_connecting_to_old: List of location IDs that connected to the removed location
+    """
+    # Check for unique location IDs before adding new locations
+    existing_ids = {loc.id for loc in components.locations}
+    for new_location in new_locations:
+        if new_location.id in existing_ids:
+            print(f"Warning: New location ID '{new_location.id}' already exists in the world!")
+            
+        # Add the new location
+        components.locations.append(deepcopy(new_location))
+        existing_ids.add(new_location.id)
+    
+    # Add the new connections from the plan
+    for source_id, destinations in updated_connections.items():
+        if source_id not in components.location_connections:
+            components.location_connections[source_id] = []
+        
+        # Set the outgoing connections
+        components.location_connections[source_id] = destinations.copy()
+    
+    # Make sure the new locations are connected to each other
+    new_location_ids = [loc.id for loc in new_locations]
+    if len(new_location_ids) == 2:  # If we have exactly two new locations
+        # Add bidirectional connection between them
+        ensure_bidirectional_connections(components, new_location_ids[0], new_location_ids[1])
+    
+    # Reconnect locations that previously connected to the old location
+    for loc_id in locations_connecting_to_old:
+        # Check if this location is already connected to any new location in the plan
+        connected_to_new_loc_id = None
+        
+        # Check both directions of planned connections
+        for new_loc_id in new_location_ids:
+            if (new_loc_id in updated_connections and loc_id in updated_connections[new_loc_id]) or \
+               (loc_id in updated_connections and new_loc_id in updated_connections[loc_id]):
+                connected_to_new_loc_id = new_loc_id
+                break
+        
+        # If not already connected in the plan, connect to a random new location
+        if not connected_to_new_loc_id:
+            # Pick one of the new locations randomly
+            connected_to_new_loc_id = random.choice(new_location_ids)
+            print(f"  - Reconnected {loc_id} to new location {connected_to_new_loc_id}")
+        
+        # Create bidirectional connection - but only to ONE of the new locations
+        ensure_bidirectional_connections(components, connected_to_new_loc_id, loc_id)
+    
+    # Make sure every connection is bidirectional
+    for source_id, destinations in list(components.location_connections.items()):
+        for dest_id in destinations:
+            ensure_bidirectional_connections(components, source_id, dest_id)
 
 
 async def improve_single_location_and_apply(
@@ -158,147 +403,26 @@ async def improve_single_location_and_apply(
         updated_starting_id = location_plan.new_locations[0].id
         print(f"Starting location {location_id} is being split. New starting location: {updated_starting_id}")
     
-    # Skip printing old location details
+    # Remove old location and get list of locations that connected to it
+    locations_connecting_to_old = remove_old_location_and_connections(
+        improved_components, location_id
+    )
     
-    # Delete the old location
-    improved_components.locations = [loc for loc in improved_components.locations if loc.id != location_id]
-    
-    # Delete all connections to/from the old location
-    if location_id in improved_components.location_connections:
-        del improved_components.location_connections[location_id]
-    
-    # Store locations that had connections to the removed location
-    # We'll need to reconnect these to the new locations later
-    locations_connecting_to_old = []
-    for loc_id, connections in list(improved_components.location_connections.items()):
-        if location_id in connections:
-            improved_components.location_connections[loc_id].remove(location_id)
-            locations_connecting_to_old.append(loc_id)
-    
-    # Check for unique location IDs before adding new locations
-    existing_ids = {loc.id for loc in improved_components.locations}
-    for new_location in location_plan.new_locations:
-        if new_location.id in existing_ids:
-            print(f"Warning: New location ID '{new_location.id}' already exists in the world!")
-            
-        # Add the new location
-        improved_components.locations.append(deepcopy(new_location))
-        existing_ids.add(new_location.id)
-    
-    # Get all the original connections from the location being improved
+    # Handle missing connections in the plan
     original_connections = story_components.location_connections.get(location_id, [])
+    updated_connections = handle_missing_connections(
+        location_plan.new_locations, 
+        location_plan.updated_connections, 
+        original_connections
+    )
     
-    # Track all connections to ensure all original ones are accounted for
-    # We need to check if all original connections are now linked to at least one of the new locations
-    planned_connections = set()
-    new_location_ids = [loc.id for loc in location_plan.new_locations]
-    
-    # Check all planned outgoing connections from the new locations
-    for source_id in new_location_ids:
-        if source_id in location_plan.updated_connections:
-            for dest_id in location_plan.updated_connections[source_id]:
-                planned_connections.add(dest_id)
-    
-    # Check all planned incoming connections to the new locations
-    for source_id, destinations in location_plan.updated_connections.items():
-        if source_id not in new_location_ids:
-            for dest_id in destinations:
-                if dest_id in new_location_ids:
-                    planned_connections.add(source_id)
-    
-    # Check if all original connections are accounted for in the plan
-    missing_connections = []
-    for conn in original_connections:
-        if conn not in planned_connections:
-            missing_connections.append(conn)
-    
-    # If there are missing connections, randomly assign them to one of the new locations
-    if missing_connections:
-        print(f"Warning: Plan is missing {len(missing_connections)} connections: {missing_connections}")
-        print("Randomly assigning missing connections to the new locations")
-        
-        # Ensure both new locations have connection entries
-        for loc_id in [loc.id for loc in location_plan.new_locations]:
-            if loc_id not in location_plan.updated_connections:
-                location_plan.updated_connections[loc_id] = []
-        
-        # Get the two new location IDs
-        new_loc_ids = [loc.id for loc in location_plan.new_locations]
-        
-        # Assign each missing connection to a random new location
-        import random
-        for conn in missing_connections:
-            # Pick one of the two new locations randomly
-            random_loc = random.choice(new_loc_ids)
-            if random_loc not in location_plan.updated_connections:
-                location_plan.updated_connections[random_loc] = []
-            
-            if conn not in location_plan.updated_connections[random_loc]:
-                location_plan.updated_connections[random_loc].append(conn)
-                print(f"  - Assigned missing connection {conn} to {random_loc}")
-    
-    # Add the new connections from the plan
-    for source_id, destinations in location_plan.updated_connections.items():
-        if source_id not in improved_components.location_connections:
-            improved_components.location_connections[source_id] = []
-        
-        # Set the outgoing connections
-        improved_components.location_connections[source_id] = destinations.copy()
-    
-    # Make sure the two new locations are connected to each other
-    new_location_ids = [loc.id for loc in location_plan.new_locations]
-    # Add bidirectional connection between the two new locations if not already present
-    if new_location_ids[0] not in improved_components.location_connections:
-        improved_components.location_connections[new_location_ids[0]] = []
-    if new_location_ids[1] not in improved_components.location_connections[new_location_ids[0]]:
-        improved_components.location_connections[new_location_ids[0]].append(new_location_ids[1])
-        
-    if new_location_ids[1] not in improved_components.location_connections:
-        improved_components.location_connections[new_location_ids[1]] = []
-    if new_location_ids[0] not in improved_components.location_connections[new_location_ids[1]]:
-        improved_components.location_connections[new_location_ids[1]].append(new_location_ids[0])
-    
-    # Reconnect locations that previously connected to the old location to exactly ONE of the new locations
-    # This prevents duplicate connections that would defeat the purpose of splitting locations
-    for loc_id in locations_connecting_to_old:
-        # First check if this location is already connected to either new location in the plan
-        connected_to_new_loc_id = None
-        
-        # Check if this location already has a planned connection to either new location
-        for new_loc_id in new_location_ids:
-            if new_loc_id in location_plan.updated_connections and loc_id in location_plan.updated_connections[new_loc_id]:
-                connected_to_new_loc_id = new_loc_id
-                break
-            
-            # Also check the reverse direction
-            if loc_id in location_plan.updated_connections and new_loc_id in location_plan.updated_connections[loc_id]:
-                connected_to_new_loc_id = new_loc_id
-                break
-        
-        # If not already connected in the plan, connect to a random new location
-        if not connected_to_new_loc_id:
-            import random
-            # Pick one of the two new locations randomly
-            connected_to_new_loc_id = random.choice(new_location_ids)
-            print(f"  - Reconnected {loc_id} to new location {connected_to_new_loc_id}")
-        
-        # Create bidirectional connection - but only to ONE of the new locations
-        if loc_id not in improved_components.location_connections[connected_to_new_loc_id]:
-            improved_components.location_connections[connected_to_new_loc_id].append(loc_id)
-        
-        if connected_to_new_loc_id not in improved_components.location_connections[loc_id]:
-            improved_components.location_connections[loc_id].append(connected_to_new_loc_id)
-
-    # Make sure that every connection in the map is bidirectional
-    for source_id, destinations in list(improved_components.location_connections.items()):
-        for dest_id in destinations:
-            if dest_id not in improved_components.location_connections:
-                improved_components.location_connections[dest_id] = []
-            
-            if source_id not in improved_components.location_connections[dest_id]:
-                improved_components.location_connections[dest_id].append(source_id)
-    
-    # Skip printing details of new locations
+    # Add new locations with updated connections
+    add_new_locations_and_connections(
+        improved_components, 
+        location_plan.new_locations, 
+        updated_connections, 
+        locations_connecting_to_old
+    )
     
     return improved_components, updated_starting_id
 
@@ -385,40 +509,23 @@ async def improve_world_design(
         # Update our working copy
         working_components = improved_components
         
-        # Show all locations sorted by id
-        all_connection_counts = {
-            loc_id: len(connections) 
-            for loc_id, connections in working_components.location_connections.items()
-        }
-        
-        # Get all location IDs
-        all_location_ids = set(all_connection_counts.keys())
-        
-        # Use the tracked new location IDs for highlighting
-        
-        # Calculate total connections and rooms
-        total_rooms = len(working_components.locations)
-        total_connections = sum(len(connections) for connections in working_components.location_connections.values()) // 2  # Divide by 2 since connections are bidirectional
-        
-        # Sort locations by ID
-        sorted_locations = sorted(all_connection_counts.items(), key=lambda x: x[0])
+        # Get connection summary with the new locations highlighted
+        summary = get_connection_summary(working_components, new_ids_this_iteration)
         
         print("\nCurrent connection counts:")
-        for loc_id, count in sorted_locations:
-            loc_name = next((loc.title for loc in working_components.locations if loc.id == loc_id), "Unknown")
-            if loc_id in new_ids_this_iteration:  # Only mark locations from current iteration
-                print(f"  {loc_id} ({loc_name}): {count} connections [NEW]")
+        for loc in summary["location_details"]:
+            if loc["is_new"]:
+                print(f"  {loc['id']} ({loc['name']}): {loc['connections']} connections [NEW]")
             else:
-                print(f"  {loc_id} ({loc_name}): {count} connections")
+                print(f"  {loc['id']} ({loc['name']}): {loc['connections']} connections")
         
         # Display summary statistics
-        print(f"\nTotal rooms: {total_rooms}")
-        print(f"Total connections: {total_connections}")
+        print(f"\nTotal rooms: {summary['total_rooms']}")
+        print(f"Total connections: {summary['total_connections']}")
         
         # Display overcrowded locations separately
-        overcrowded = {k: v for k, v in all_connection_counts.items() if v > 4}
-        if overcrowded:
-            print(f"Locations still overcrowded: {len(overcrowded)}")
+        if summary["overcrowded"]:
+            print(f"Locations still overcrowded: {len(summary['overcrowded'])}")
         
         iteration += 1
     
@@ -426,11 +533,10 @@ async def improve_world_design(
         print("Reached maximum iteration count. Some locations may still be overcrowded.")
     
     # Print final summary
-    total_rooms = len(working_components.locations)
-    total_connections = sum(len(connections) for connections in working_components.location_connections.values()) // 2
+    final_summary = get_connection_summary(working_components)
     print(f"\nFinal world state:")
-    print(f"Total rooms: {total_rooms}")
-    print(f"Total connections: {total_connections}")
+    print(f"Total rooms: {final_summary['total_rooms']}")
+    print(f"Total connections: {final_summary['total_connections']}")
     
     return working_components, updated_starting_id
 
