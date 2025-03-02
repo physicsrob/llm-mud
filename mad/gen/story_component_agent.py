@@ -111,6 +111,26 @@ IMPORTANT: Every location must have at least one connection to ensure the world 
 
 """
 
+# The prompt specifically for analyzing character locations
+character_locations_prompt = """
+You are a master literary analyst specializing in character geography and spatial positioning.
+
+Your task is to analyze the story and identify the locations where each character is typically found or would likely visit. For each character:
+
+1. Determine which locations they are associated with or where they would likely be encountered
+2. This should be based on:
+   - Explicit mentions of where characters are located in the story
+   - Implied locations based on character activities and scenes
+   - Logical deductions about where characters spend their time or would visit
+
+You must return a dictionary where:
+- Every character name appears exactly once as a key
+- Every value is a list of location IDs where that character might be found, with their primary location listed first
+- Characters should have 1-3 associated locations, depending on their mobility in the story
+
+IMPORTANT: Every character must be assigned to at least one valid location ID.
+"""
+
 async def character_description_agent(story_content: str, character_name: str) -> str:
     """
     Generate a detailed character description in second person.
@@ -252,25 +272,6 @@ class _CharacterLocations(BaseModel):
         default_factory=dict
     )
 
-# The prompt specifically for analyzing character locations
-character_locations_prompt = """
-You are a master literary analyst specializing in character geography and spatial positioning.
-
-Your task is to analyze the story and identify the locations where each character is typically found or would likely visit. For each character:
-
-1. Determine which locations they are associated with or where they would likely be encountered
-2. This should be based on:
-   - Explicit mentions of where characters are located in the story
-   - Implied locations based on character activities and scenes
-   - Logical deductions about where characters spend their time or would visit
-
-You must return a dictionary where:
-- Every character name appears exactly once as a key
-- Every value is a list of location IDs where that character might be found, with their primary location listed first
-- Characters should have 1-3 associated locations, depending on their mobility in the story
-
-IMPORTANT: Every character must be assigned to at least one valid location ID.
-"""
 
 async def identify_location_connections(story_content: str, locations: list[LocationDescription]) -> dict[str, list[str]]:
     """
@@ -310,6 +311,17 @@ async def identify_location_connections(story_content: str, locations: list[Loca
     result = await connection_agent.run(user_prompt)
     connections = result.data.location_connections
 
+    # Verify that every location ID appears in the output
+    location_ids = [loc.id for loc in locations]
+    missing_ids = [loc_id for loc_id in location_ids if loc_id not in connections]
+    
+    if missing_ids:
+        error_message = f"ERROR: The following location IDs are missing from the connections output: {', '.join(missing_ids)}"
+        print(error_message)
+        # Add the missing locations with empty connections lists
+        for missing_id in missing_ids:
+            connections[missing_id] = []
+    
     print(f"  ✓ Identified {sum(len(dests) for dests in connections.values())} location connections")
     return connections
 

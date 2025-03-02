@@ -77,7 +77,6 @@ async def create_story_world(world_desc: WorldDescription, story_title: str, the
     # Import here to avoid circular imports
     from mad.gen.story_component_agent import extract_story_components
     components = await extract_story_components(story_title, story_content)
-    debug(components)
     
     # Return the StoryWorldComponents object
     return components

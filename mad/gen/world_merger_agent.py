@@ -4,7 +4,7 @@ from pydantic_ai import Agent
 from pydantic_ai.models.openai import OpenAIModel
 from copy import deepcopy
 
-from mad.config import creative_model, OPENROUTER_BASE_URL, OPENROUTER_API_KEY
+from mad.config import location_model_instance
 from mad.gen.data_model import StoryWorldComponents, WorldMergeMapping, LocationDescription
 
 
@@ -66,14 +66,8 @@ async def merge_story_worlds(story_components: list[StoryWorldComponents]) -> Wo
         A WorldMergeMapping object containing instructions for how to merge the worlds
     """
     # Initialize the agent for world merging
-    model = OpenAIModel(
-        creative_model,
-        base_url=OPENROUTER_BASE_URL,
-        api_key=OPENROUTER_API_KEY,
-    )
-    
     merger_agent = Agent(
-        model=model,
+        model=location_model_instance,
         result_type=WorldMergeMapping,
         system_prompt=world_merger_prompt,
         retries=2,
@@ -103,7 +97,6 @@ and select a starting location according to your instructions.
 """
     
     result = await merger_agent.run(user_prompt)
-    
     return result.data
 
 
@@ -167,7 +160,7 @@ def apply_merge_plan(plan: WorldMergeMapping, story_components: list[StoryWorldC
                 if loc_id not in merged_world.character_locations[char_id]:
                     merged_world.character_locations[char_id].append(loc_id)
     
-    # Step 5: Merge existing location connections, applying the location ID mapping
+    # Step 5: Merge existing location connections, applying the location ID mapping    
     for component in story_components:
         for source_id, dest_ids in component.location_connections.items():
             # Map the source ID if needed
@@ -182,6 +175,12 @@ def apply_merge_plan(plan: WorldMergeMapping, story_components: list[StoryWorldC
                 new_dest_id = plan.duplicate_locations.get(dest_id, dest_id)
                 if new_dest_id not in merged_world.location_connections[new_source_id]:
                     merged_world.location_connections[new_source_id].append(new_dest_id)
+                    
+                # Also create bidirectional connection
+                if new_dest_id not in merged_world.location_connections:
+                    merged_world.location_connections[new_dest_id] = []
+                if new_source_id not in merged_world.location_connections[new_dest_id]:
+                    merged_world.location_connections[new_dest_id].append(new_source_id)
     
     # Step 6: Add new connections from the plan
     for source_id, dest_ids in plan.new_connections.items():
@@ -199,5 +198,21 @@ def apply_merge_plan(plan: WorldMergeMapping, story_components: list[StoryWorldC
                 merged_world.location_connections[dest_id] = []
             if source_id not in merged_world.location_connections[dest_id]:
                 merged_world.location_connections[dest_id].append(source_id)
+    
+    # Ensure all locations have entries in the connections dictionary
+    for location in merged_world.locations:
+        if location.id not in merged_world.location_connections:
+            merged_world.location_connections[location.id] = []
+    
+    # Ensure all locations have at least one connection
+    for location in merged_world.locations:
+        if not merged_world.location_connections[location.id] and location.id != plan.starting_location_id:
+            # Connect this location to the starting location as a fallback
+            merged_world.location_connections[location.id].append(plan.starting_location_id)
+            
+            # Add reciprocal connection
+            if plan.starting_location_id not in merged_world.location_connections:
+                merged_world.location_connections[plan.starting_location_id] = []
+            merged_world.location_connections[plan.starting_location_id].append(location.id)
     
     return merged_world

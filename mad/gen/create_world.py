@@ -14,10 +14,10 @@ from .world_improver_agent import improve_world_design
 from .location_exit_agent import get_location_exits
 from devtools import debug
 
-import logfire
-logfire.configure(
-    send_to_logfire=False
-)
+# import logfire
+# logfire.configure(
+#     send_to_logfire=False
+# )
 
 async def design_world(theme: str, story_count: int = 10) -> WorldDesign:
     """
@@ -47,8 +47,6 @@ async def design_world(theme: str, story_count: int = 10) -> WorldDesign:
     
     # Wait for all tasks to complete
     story_worlds = await asyncio.gather(*tasks)
-
-    debug(story_worlds)
 
     # If we have multiple stories, merge them
     starting_location_id = None

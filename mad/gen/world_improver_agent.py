@@ -254,32 +254,36 @@ async def improve_single_location_and_apply(
     if new_location_ids[0] not in improved_components.location_connections[new_location_ids[1]]:
         improved_components.location_connections[new_location_ids[1]].append(new_location_ids[0])
     
-    # Reconnect locations that previously connected to the old location
-    # Choose the most appropriate new location to connect to based on updated_connections
+    # Reconnect locations that previously connected to the old location to exactly ONE of the new locations
+    # This prevents duplicate connections that would defeat the purpose of splitting locations
     for loc_id in locations_connecting_to_old:
-        # Find which new location is most appropriate to connect to this location
-        connected_to_new = False
+        # First check if this location is already connected to either new location in the plan
+        connected_to_new_loc_id = None
         
-        # If this location is in the updated connections, use that information
+        # Check if this location already has a planned connection to either new location
         for new_loc_id in new_location_ids:
             if new_loc_id in location_plan.updated_connections and loc_id in location_plan.updated_connections[new_loc_id]:
-                connected_to_new = True
+                connected_to_new_loc_id = new_loc_id
+                break
+            
+            # Also check the reverse direction
+            if loc_id in location_plan.updated_connections and new_loc_id in location_plan.updated_connections[loc_id]:
+                connected_to_new_loc_id = new_loc_id
                 break
         
         # If not already connected in the plan, connect to a random new location
-        if not connected_to_new:
+        if not connected_to_new_loc_id:
             import random
             # Pick one of the two new locations randomly
-            random_loc = random.choice(new_location_ids)
-            
-            # Create bidirectional connection
-            if loc_id not in improved_components.location_connections[random_loc]:
-                improved_components.location_connections[random_loc].append(loc_id)
-            
-            if random_loc not in improved_components.location_connections[loc_id]:
-                improved_components.location_connections[loc_id].append(random_loc)
-            
-            print(f"  - Reconnected {loc_id} to new location {random_loc}")
+            connected_to_new_loc_id = random.choice(new_location_ids)
+            print(f"  - Reconnected {loc_id} to new location {connected_to_new_loc_id}")
+        
+        # Create bidirectional connection - but only to ONE of the new locations
+        if loc_id not in improved_components.location_connections[connected_to_new_loc_id]:
+            improved_components.location_connections[connected_to_new_loc_id].append(loc_id)
+        
+        if connected_to_new_loc_id not in improved_components.location_connections[loc_id]:
+            improved_components.location_connections[loc_id].append(connected_to_new_loc_id)
 
     # Make sure that every connection in the map is bidirectional
     for source_id, destinations in list(improved_components.location_connections.items()):
