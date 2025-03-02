@@ -96,7 +96,7 @@ class WorldMergeMapping(BaseModel):
     
     new_connections: dict[str, list[str]] = Field(
         description="New connections to add between locations to ensure all stories are connected. For each location id, a list of location ids which are new connections.",
-        default_factory=list
+        default_factory=dict
     )
     starting_room_id: str = Field(
         description="The ID of the room that should be the starting point for players"

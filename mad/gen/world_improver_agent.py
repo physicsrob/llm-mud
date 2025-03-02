@@ -1,4 +1,5 @@
 from devtools import debug
+import json
 from pydantic_ai import Agent
 from pydantic_ai.models.openai import OpenAIModel
 from copy import deepcopy
@@ -76,25 +77,31 @@ async def improve_world_design(story_components: StoryWorldComponents) -> WorldI
     overcrowded_locations = [loc_id for loc_id, count in connection_counts.items() if count > 4]
     
     # Run the agent to improve the world design
-    user_prompt = f"""
-    I need to improve a world design by ensuring no location has more than 4 connections.
-    
-    The current world has {len(story_components.locations)} locations and {len(overcrowded_locations)} 
-    locations with more than 4 connections.
-    
-    Here are the details of the world:
-    
-    Locations:
-    {[loc.model_dump() for loc in story_components.locations]}
-    
-    Current connections:
-    {story_components.location_connections}
-    
-    Specifically, these locations have too many connections:
-    {[(loc_id, len(story_components.location_connections[loc_id])) for loc_id in overcrowded_locations]}
-    
-    Please create a plan to improve this world design by adding intermediate locations
-    and redistributing connections so no location has more than 4 connections.
+    user_prompt = f"""\
+I need to improve a world design by ensuring no location has more than 4 connections.
+
+The current world has {len(story_components.locations)} locations and {len(overcrowded_locations)} 
+locations with more than 4 connections.
+
+Here are the details of all the locations:"""
+    all_connections = {}
+    for loc in story_components.locations:
+        user_prompt += f"{loc.id}: {loc.title}\n"
+        user_prompt += f"{loc.brief_description}\n"
+        user_prompt += "Connections: " + ", ".join(story_components.location_connections.get(loc.id,[]))
+        user_prompt += "\n----------------\n\n"
+        all_connections[loc.id] = story_components.location_connections.get(loc.id, [])
+
+    user_prompt += f"""\
+All Connections:
+{json.dumps(all_connections, indent=4)}
+Locations:
+
+Specifically, these locations have too many connections:
+{[(loc_id, len(story_components.location_connections[loc_id])) for loc_id in overcrowded_locations]}
+
+Please create a plan to improve this world design by adding intermediate locations
+and redistributing connections so no location has more than 4 connections.
     """
     
     result = await improver_agent.run(user_prompt)

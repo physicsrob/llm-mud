@@ -1,4 +1,5 @@
 from devtools import debug
+import json
 from pydantic_ai import Agent
 from pydantic_ai.models.openai import OpenAIModel
 from copy import deepcopy
@@ -35,7 +36,8 @@ you will:
      * Fit the themes and atmosphere of the locations it connects
 
 3. DESIGN NEW CONNECTIONS:
-   - Create a list of new connections between locations to ensure all stories are interconnected
+   - Create new connections between locations to ensure all stories are interconnected
+   - New connections is a dictionary mapping location to list of new connections
    - Each connection is a mapping from source location id to a list of locations ids which are new connections
    - Ensure that by following these connections, a player could reach any location from any other location
 
@@ -79,21 +81,29 @@ async def merge_story_worlds(story_components: list[StoryWorldComponents]) -> Wo
     )
     
     # Run the agent to merge the worlds
-    user_prompt = f"""
-I need to merge {len(story_components)} story worlds into a single cohesive game world.
+    user_prompt = """\
+I need to merge story worlds into a single cohesive game world.
 
-Here are the complete details of all story worlds. Please analyze them and create a plan for 
-merging them into a single world:
+Here are the details of all story locations we need to merge:"""
+    all_connections = {}
+    for story in story_components:
+        for loc in story.locations:
+            user_prompt += f"{loc.id}: {loc.title}\n"
+            user_prompt += f"{loc.brief_description}\n"
+            user_prompt += "Connections: " + ", ".join(story.location_connections.get(loc.id,[]))
+            user_prompt += "\n----------------\n\n"
+            all_connections[loc.id] = story.location_connections.get(loc.id, [])
 
-{[story.model_dump() for story in story_components]}
+    user_prompt += f"""\
+All Connections:
+{json.dumps(all_connections, indent=4)}
 
 Please identify duplicate locations, create new connector locations, design new connections, 
 and select a starting room according to your instructions.
 """
     
     result = await merger_agent.run(user_prompt)
-    if result._state.retries>1:
-        debug(result)
+    
     return result.data
 
 

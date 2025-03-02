@@ -2,7 +2,8 @@ import os
 from pydantic_ai.models.openai import OpenAIModel
 
 # Model configuration
-creative_model = "anthropic/claude-3.7-sonnet"
+#creative_model = "anthropic/claude-3.7-sonnet"
+creative_model = "openai/gpt-4o-mini"
 char_agent_model = "anthropic/claude-3.7-sonnet"
 story_model = "google/gemini-2.0-flash-001" # Cheap and fast
 
