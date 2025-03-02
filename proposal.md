@@ -10,19 +10,7 @@ The current world improver implementation:
 
 ## Proposed Changes
 
-### 1. Remove the 2-Location Limit
-
-**Technical Changes Required:**
-- Update the `LocationImprovementPlan` model to support variable-length location lists
-- Modify the validation check on line 147-149 to accept 2-5 locations instead of exactly 2
-- Update the bidirectional connection logic (lines 248-259) to work with arbitrary numbers of locations
-- Revise the prompt to request 2-5 locations instead of strictly 2
-
-**Challenges:**
-- The connection management logic assumes exactly 2 locations in several places
-- The random assignment of unplanned connections would need reworking
-
-### 2. Split into Three Specialized Agents
+### Split into Three Specialized Agents
 
 #### Agent 1: Location Proposer
 **Purpose:** Create 2-5 new locations to replace an overcrowded location
@@ -36,8 +24,19 @@ The current world improver implementation:
 - No connection information (this is handled by other agents)
 
 **Technical Implementation:**
+
+```python
+class _LocationProposal(BaseModel):
+    """Proposal for 2-5 locations to replace an overcrowded location."""
+    new_locations: list[LocationDescription] = Field(
+        description="2-5 replacement locations that serve the narrative purpose of the original",
+        min_items=2,
+        max_items=5
+    )
+```
 - New agent with narrative-focused prompt
-- Uses the same `LocationDescription` model but returns a custom response type
+- Outputs new type _LocationProposal
+- Create a function `propose_replacement_locations` which calls agent
 
 #### Agent 2: Connection Manager
 **Purpose:** Create connections between the newly created locations
@@ -50,106 +49,59 @@ The current world improver implementation:
 - Should ensure all new locations are connected in a coherent way
 
 **Technical Implementation:**
-- New agent with topology-focused prompt
-- Returns a partial connection map
-
-#### Agent 3: Connection Distributor
-**Purpose:** Assign each original connection to one of the new locations
-**Input:**
-- List of newly created locations
-- List of original connections that need assignment
-- Context about connected locations
-
-**Output:**
-- Mapping of each original connection to exactly one new location
-
-**Technical Implementation:**
-- New agent focused on connection distribution
-- Returns a mapping dictionary from original connections to new location IDs
-
-## New Data Models Required
-
-1. **LocationProposal:**
 ```python
-class LocationProposal(BaseModel):
-    """Proposal for 2-5 locations to replace an overcrowded location."""
-    new_locations: list[LocationDescription] = Field(
-        description="2-5 replacement locations that serve the narrative purpose of the original",
-        min_items=2,
-        max_items=5
-    )
-```
-
-2. **NewLocationConnections:**
-```python
-class NewLocationConnections(BaseModel):
+class _NewLocationConnections(BaseModel):
     """Connections between newly created locations."""
     internal_connections: dict[str, list[str]] = Field(
         description="Connections between the new locations. Maps location ID to list of connected location IDs."
     )
 ```
+- New agent with topology-focused prompt
+- Returns a partial connection map (_NewLocationConnections)
+- Agent code should not be called if only 2 locations are proposed. In that case we should automatically connect the two rooms to each-other
+- Should have validations logic to insure every location has at least one connection
+- Create a function `propose_replacement_location_interconnections`
 
-3. **ConnectionDistribution:**
+#### Agent 3: Connection Distributor
+**Purpose:** Assign each original connection to one of the new locations
+**Input:**
+- List of newly created locations
+- List of original connections that need assignment. Each connection should include context about the location it connects to.
+
+**Output:**
+- Mapping of each original connection to exactly one new location
+
+**Technical Implementation:**
 ```python
-class ConnectionDistribution(BaseModel):
+class _ConnectionDistribution(BaseModel):
     """Assignment of original connections to new locations."""
     connection_assignments: dict[str, str] = Field(
         description="Maps original connection IDs to new location IDs. Each original connection is assigned to exactly one new location."
     )
 ```
+- New agent focused on connection distribution
+- Returns a mapping dictionary from original connections to new location IDs (_ConnectionDistribution)
+- Create function `redistribute_connections`
+- Should validate that all connections were assigned correctly
+- If validation fails it should produce an error
 
-## Implementation Strategy
+### Update Improvement Pipeline
+Remove improve_single_location.
 
-### Step 1: Modify LocationImprovementPlan
-Update the model to support variable-length location lists and clearly separate connection types.
+Update the `improve_single_location_and_apply` function to work directly with the three specialized agents' outputs:
+- First it calls propose_replacement_locations
+* If no new locations are proposed, we can exit
+* Remove the old locations
+* Add the new locations
+- Next we call propose_replacement_location_interconnections
+* Add the new connections
+- Finally we call redstribute_connections
+* Add all the necessary connections
 
-### Step 2: Create Three Specialized Agents
-Implement each agent with its own prompt and result type.
 
-### Step 3: Update Improvement Pipeline
-Modify the `improve_single_location_and_apply` function to:
-1. Call the Location Proposer agent
-2. Validate the result (2-5 locations)
-3. Call the Connection Manager agent with the new locations
-4. Call the Connection Distributor agent with original connections
-5. Merge the results into a complete improvement plan
-6. Apply the plan as before
+### Remove handle_missing_connections
+handle_missing_connections should no longer be needed. The new logic insures that there are no missing connections
 
-### Step 4: Update Connection Logic
-Rewrite the connection management code to:
-1. Handle arbitrary numbers of new locations
-2. Apply internal connections from the Connection Manager
-3. Apply external connections from the Connection Distributor
-4. Ensure all connections remain bidirectional
-
-## Validation of Assumptions
-
-1. **Your Assumption: Creating 2-5 Locations**
-✅ Feasible with model updates and prompt changes
-✅ Will provide more flexibility for complex overcrowded locations
-⚠️ May create more locations than necessary if not constrained by narrative
-
-2. **Your Assumption: Three Specialized Agents**
-✅ Clean separation of concerns aligns with good design principles
-✅ Allows specialized prompting for each sub-task
-⚠️ Requires careful data passing between agents
-⚠️ Increases API costs (3 calls per improvement vs 1)
-
-3. **My Research on Potential Issues:**
-- Connection management becomes more complex with >2 locations
-- Need clear strategy for bidirectional connections in multi-location setup
-- Agent #3 (Connection Distributor) needs clear criteria for distribution decisions
-- Random assignment fallback for missing connections needs rethinking
-
-## Proposed Implementation Plan
-
-1. Update the data models to support the new agent architecture
-2. Create new prompts for each specialized agent
-3. Rewrite the improvement algorithm to use the three agents sequentially
-4. Update connection management logic for variable location counts
-5. Add improved debugging and visualization for the multi-location setup
-
-## Example Agent Prompts
 
 ### Location Proposer:
 ```
@@ -203,5 +155,7 @@ The proposed changes will significantly enhance the world improver by:
 2. Separating concerns into specialized agents for better results
 3. Maintaining narrative coherence through focused prompting
 4. Improving the overall quality of the improved world
+5. Eliminating the need for an intermediate LocationImprovementPlan data model
+6. Making the code more direct by working with agent outputs directly
 
-The implementation will require moderate refactoring but builds on the existing foundation, preserving the core algorithm while enhancing its capabilities.
+The implementation will require moderate refactoring but builds on the existing foundation, simplifying the architecture while enhancing its capabilities. By removing the intermediate data model conversion, we not only make the code more straightforward but also more maintainable and easier to extend in the future.

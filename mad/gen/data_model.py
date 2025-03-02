@@ -139,3 +139,107 @@ class WorldDesign(BaseModel):
     starting_location_id: str = Field(
         description="The ID of the location that should be the starting point for players"
     )
+    
+    def find_location_by_id(self, location_id: str) -> LocationDescriptionWithExits | None:
+        """
+        Find a location in this world by its ID.
+        
+        Args:
+            location_id: The ID of the location to find
+            
+        Returns:
+            LocationDescriptionWithExits object if found, None otherwise
+        """
+        for location in self.locations:
+            if location.id == location_id:
+                return location
+        return None
+        
+    def ensure_bidirectional_exits(self, source_id: str, dest_id: str) -> None:
+        """
+        Ensures that a bidirectional exit exists between two locations.
+        
+        Args:
+            source_id: The first location ID
+            dest_id: The second location ID
+        """
+        source_location = self.find_location_by_id(source_id)
+        dest_location = self.find_location_by_id(dest_id)
+        
+        if not source_location or not dest_location:
+            return
+        
+        # Check if source has exit to dest
+        source_to_dest_exists = any(exit.destination_id == dest_id for exit in source_location.exits)
+        if not source_to_dest_exists:
+            source_location.exits.append(LocationExit(
+                destination_id=dest_id,
+                exit_name=dest_location.title.lower(),
+                exit_description=f"There is a path to {dest_location.title}"
+            ))
+        
+        # Check if dest has exit to source
+        dest_to_source_exists = any(exit.destination_id == source_id for exit in dest_location.exits)
+        if not dest_to_source_exists:
+            dest_location.exits.append(LocationExit(
+                destination_id=source_id,
+                exit_name=source_location.title.lower(),
+                exit_description=f"There is a path to {source_location.title}"
+            ))
+            
+    def remove_location(self, location_id: str) -> list[str]:
+        """
+        Remove a location and all its connections from the world design.
+        
+        This method removes the specified location and also removes all exits 
+        to/from that location, maintaining world consistency.
+        
+        Args:
+            location_id: ID of the location to remove
+            
+        Returns:
+            List of IDs of locations that previously had exits to the removed location
+        """
+        # Find locations that connect to the location being removed
+        locations_connecting_to_location = []
+        for loc in self.locations:
+            for exit in list(loc.exits):  # Use list to allow modification during iteration
+                if exit.destination_id == location_id:
+                    loc.exits.remove(exit)
+                    locations_connecting_to_location.append(loc.id)
+        
+        # Delete the location
+        self.locations = [loc for loc in self.locations if loc.id != location_id]
+        
+        return locations_connecting_to_location
+        
+    def add_location(self, location: LocationDescription) -> LocationDescriptionWithExits:
+        """
+        Add a single location to the world design.
+        
+        Args:
+            location: The LocationDescription to add
+            
+        Returns:
+            The newly added LocationDescriptionWithExits object
+        
+        Raises:
+            ValueError: If a location with the same ID already exists
+        """
+        # Check if location with this ID already exists
+        if any(loc.id == location.id for loc in self.locations):
+            raise ValueError(f"Location with ID '{location.id}' already exists in the world")
+        
+        # Create a new LocationDescriptionWithExits
+        location_with_exits = LocationDescriptionWithExits(
+            id=location.id,
+            title=location.title,
+            brief_description=location.brief_description,
+            long_description=location.long_description,
+            exits=[]
+        )
+        
+        # Add to locations list
+        self.locations.append(location_with_exits)
+        
+        return location_with_exits
