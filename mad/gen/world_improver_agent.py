@@ -5,11 +5,10 @@ from pydantic_ai import Agent
 from pydantic import BaseModel, Field
 from copy import deepcopy
 
-from mad.config import location_model_instance 
+from mad.config import powerful_model_instance 
 from mad.gen.data_model import (
     LocationDescription, 
     WorldDesign,
-    LocationDescriptionWithExits,
     LocationExit
 )
 
@@ -26,8 +25,8 @@ def get_connection_summary(world_design: WorldDesign, new_ids: set[str] = None) 
     """
     # Calculate connection counts for all locations
     all_connection_counts = {
-        loc.id: len(loc.exits) 
-        for loc in world_design.locations
+        src_id: len(dst_ids) 
+        for src_id,dst_ids in world_design.location_connections.items()
     }
     
     # Find overcrowded locations
@@ -36,7 +35,7 @@ def get_connection_summary(world_design: WorldDesign, new_ids: set[str] = None) 
     # Calculate total rooms and connections
     total_rooms = len(world_design.locations)
     # Divide by 2 since connections are bidirectional
-    total_connections = sum(len(loc.exits) for loc in world_design.locations) // 2
+    total_connections = sum(len(dst_ids) for dst_ids in world_design.location_connections.values())
     
     # Create a list of locations with their names and connection counts, sorted by ID
     location_details = []
@@ -139,7 +138,7 @@ async def propose_replacement_locations(
         A _LocationProposal object containing 2-5 new locations
     """
     location_proposer_agent = Agent(
-        model=location_model_instance,
+        model=powerful_model_instance,
         result_type=_LocationProposal,
         system_prompt=location_proposer_prompt,
         retries=3,
@@ -151,8 +150,10 @@ async def propose_replacement_locations(
     if not location:
         raise ValueError(f"Location with ID {location_id} not found in world design")
     
+    dest_ids = world_design.location_connections.get(location_id,[])
+
     # Get connections for this location
-    connection_count = len(location.exits)
+    connection_count = len(dest_ids)
     
     # If the location doesn't have too many connections, return an empty proposal
     if connection_count <= 4:
@@ -176,8 +177,8 @@ Here are the details of the connected locations:
 """
 
     # Include details of all connected locations
-    for exit in location.exits:
-        connected_loc = world_design.find_location_by_id(exit.destination_id)
+    for dst_id in dest_ids:
+        connected_loc = world_design.find_location_by_id(dst_id)
         if connected_loc:
             user_prompt += f"ID: {connected_loc.id}\nTitle: {connected_loc.title}\nBrief: {connected_loc.brief_description}\n\n"
     
@@ -214,7 +215,7 @@ async def propose_replacement_location_interconnections(
     
     # For 3+ locations, use the agent to create a more complex connection graph
     connection_manager_agent = Agent(
-        model=location_model_instance,
+        model=powerful_model_instance,
         result_type=_NewLocationConnections,
         system_prompt=connection_manager_prompt,
         retries=3,
@@ -286,7 +287,7 @@ async def redistribute_connections(
         A _ConnectionDistribution object mapping original connections to new locations
     """
     connection_distributor_agent = Agent(
-        model=location_model_instance,
+        model=powerful_model_instance,
         result_type=_ConnectionDistribution,
         system_prompt=connection_distributor_prompt,
         retries=3,
@@ -391,8 +392,9 @@ async def improve_single_location_and_apply(
     
     # Get list of locations connected to this one BEFORE removing it
     original_connections = []
-    for exit in location.exits:
-        connected_loc = world_design.find_location_by_id(exit.destination_id)
+    connection_ids = world_design.location_connections.get(location_id, [])
+    for exit_id in connection_ids:
+        connected_loc = world_design.find_location_by_id(exit_id)
         if connected_loc:
             original_connections.append({
                 "id": connected_loc.id,
@@ -425,10 +427,6 @@ async def improve_single_location_and_apply(
         if not source_loc:
             continue
             
-        # Clear existing exits for the new locations
-        if source_id in new_location_ids:
-            source_loc.exits = []
-        
         # Add the internal connections
         for dest_id in destinations:
             if world_design.find_location_by_id(dest_id):
@@ -469,9 +467,9 @@ async def improve_world_design(world_design: WorldDesign) -> None:
     while iteration <= max_iterations:
         # Find all overcrowded locations
         overcrowded_locations = []
-        for loc in world_design.locations:
-            if len(loc.exits) > 4:
-                overcrowded_locations.append((loc.id, len(loc.exits)))
+        for src_id, dest_ids in world_design.location_connections.items():
+            if len(dest_ids) > 4:
+                overcrowded_locations.append((src_id, len(dest_ids)))
         
         # If no locations are overcrowded, we're done
         if not overcrowded_locations:
@@ -510,7 +508,7 @@ async def improve_world_design(world_design: WorldDesign) -> None:
                 for new_id in new_ids_this_iteration:
                     new_loc = world_design.find_location_by_id(new_id)
                     if new_loc:
-                        print(f"  {new_id} ({new_loc.title}) - {len(new_loc.exits)} connections")
+                        print(f"  {new_id} ({new_loc.title}) - {len(world_design.location_connections[new_loc.id])} connections")
             
             # Get connection summary with the new locations highlighted
             summary = get_connection_summary(world_design, new_ids_this_iteration)

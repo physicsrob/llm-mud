@@ -3,13 +3,12 @@ from pathlib import Path
 from mad.core.location import Location, LocationExit
 from mad.core.world import World
 from mad.gen.data_model import (
-    WorldDescription, LocationDescription, LocationDescriptionWithExits, 
-    WorldDesign, StoryWorldComponents
+    WorldDescription, LocationDescription, WorldDesign
 )
 from .describe_world_agent import describe_world
 from .create_character_agent import create_character_agent
-from .create_world_story_agent import create_story_world
-from .world_merger_agent import merge_story_worlds, apply_merge_plan
+from .story_world_design_agent import create_world_design
+from .world_merger_agent import merge_worlds 
 from .world_improver_agent import improve_world_design
 from .location_exit_agent import get_location_exits
 from devtools import debug
@@ -18,6 +17,26 @@ from devtools import debug
 # logfire.configure(
 #     send_to_logfire=False
 # )
+
+async def update_design_exits(design: WorldDesign):
+    print("\nCreating location exits...")
+    exits_tasks = []
+    for src_id, dest_ids in design.location_connections.items():
+        location = design.find_location_by_id(src_id)
+        task = asyncio.create_task(
+            get_location_exits(location, design.locations, dest_ids)
+        )
+        exits_tasks.append(task)
+    
+    # Wait for all exit generation tasks to complete
+    exits = await asyncio.gather(*exits_tasks)
+    
+    exit_mapping = {}
+    for (src_id, dest_ids), dest_exits in zip(design.location_connections.items(), exits):
+        exit_mapping[src_id] = dest_exits
+
+    design.location_exits = exit_mapping
+
 
 async def design_world(theme: str, story_count: int = 10) -> WorldDesign:
     """
@@ -42,55 +61,21 @@ async def design_world(theme: str, story_count: int = 10) -> WorldDesign:
     tasks = []
     for title in world_desc.story_titles[:story_count]:
         print(f"  - {title}")
-        task = asyncio.create_task(create_story_world(world_desc, title, theme))
+        task = asyncio.create_task(create_world_design(world_desc, title, theme))
         tasks.append(task)
     
     # Wait for all tasks to complete
-    story_worlds = await asyncio.gather(*tasks)
-
-    # If we have multiple stories, merge them
-    starting_location_id = None
-    if len(story_worlds) > 1:
-        print("\nMerging story worlds...")
-        merge_plan = await merge_story_worlds(story_worlds)
-        
-        # Apply the merge plan
-        print("\nApplying merge plan...")
-        merged_world = apply_merge_plan(merge_plan, story_worlds)
-        starting_location_id = merge_plan.starting_location_id
-    elif len(story_worlds) == 1:
-        merged_world = story_worlds[0]
-    else:
+    story_designs = await asyncio.gather(*tasks)
+    if not len(story_designs):
         raise ValueError("No story worlds were generated")
-    
-    # Generate detailed exits for all locations
-    print("\nGenerating location exits...")
-    locations_with_exits_tasks = []
-    for location in merged_world.locations:
-        # Get connected location IDs for this location
-        connected_ids = merged_world.location_connections.get(location.id, [])
-        task = asyncio.create_task(
-            get_location_exits(location, merged_world.locations, connected_ids)
-        )
-        locations_with_exits_tasks.append(task)
-    
-    # Wait for all exit generation tasks to complete
-    locations_with_exits = await asyncio.gather(*locations_with_exits_tasks)
-    
-    # If no starting location was specified or only one story, use the first location
-    if not starting_location_id and locations_with_exits:
-        starting_location_id = locations_with_exits[0].id
-    
-    # Create the WorldDesign
-    world_design = WorldDesign(
-        world_description=world_desc,
-        locations=locations_with_exits,
-        characters=merged_world.characters,
-        character_locations=merged_world.character_locations,
-        starting_location_id=starting_location_id
-    )
-    
-    return world_design
+    story_design = story_designs[0] 
+
+    for other_design in story_designs[1:]:
+        print("\nMerging story worlds...")
+        await merge_worlds(story_design, other_design)
+   
+    await update_design_exits(story_design)
+    return story_design
 
 
 def convert_design_to_world(world_design: WorldDesign) -> World:
@@ -108,23 +93,26 @@ def convert_design_to_world(world_design: WorldDesign) -> World:
     """
     # Convert to actual Location objects
     world_locations = []
-    for location_with_exits in world_design.locations:
+    for location in world_design.locations:
+        if location.id not in world_design.location_exits:
+            print(f"Missing exits for location: {location.id}")
+            continue
+
         # Create LocationExit objects
         location_exit_objects = [
             LocationExit(
                 destination_id=exit.destination_id,
                 exit_description=exit.exit_description,
                 exit_name=exit.exit_name
-            ) for exit in location_with_exits.exits
+            ) for exit in world_design.location_exits[location.id]
         ]
         
-        # Convert LocationDescriptionWithExits to a Location object
         location = Location(
-            id=location_with_exits.id,
-            title=location_with_exits.title,
-            brief_description=location_with_exits.brief_description,
-            long_description=location_with_exits.long_description,
-            exits={exit.exit_name: exit.destination_id for exit in location_with_exits.exits},
+            id=location.id,
+            title=location.title,
+            brief_description=location.brief_description,
+            long_description=location.long_description,
+            exits={exit.exit_name: exit.destination_id for exit in location_exit_objects},
             exit_objects=location_exit_objects
         )
         world_locations.append(location)
@@ -187,37 +175,5 @@ async def improve_world_design_iteration(world_design: WorldDesign) -> None:
     print("\nImproving world design location-by-location...")
     await improve_world_design(world_design)
     
-    # Generate detailed exits for all locations
-    print("\nRecreating location exits...")
-    locations_with_exits_tasks = []
-    for location in world_design.locations:
-        # Get connected location IDs for this location
-        connected_ids = [exit.destination_id for exit in location.exits]
-        task = asyncio.create_task(
-            get_location_exits(
-                LocationDescription(
-                    id=location.id,
-                    title=location.title,
-                    brief_description=location.brief_description,
-                    long_description=location.long_description
-                ),
-                [
-                    LocationDescription(
-                        id=loc.id,
-                        title=loc.title,
-                        brief_description=loc.brief_description,
-                        long_description=loc.long_description
-                    ) for loc in world_design.locations
-                ],
-                connected_ids
-            )
-        )
-        locations_with_exits_tasks.append(task)
-    
-    # Wait for all exit generation tasks to complete
-    locations_with_exits = await asyncio.gather(*locations_with_exits_tasks)
-    
-    # Update the locations in the world design
-    world_design.locations.clear()
-    world_design.locations.extend(locations_with_exits)
+    await update_design_exits(world_design)
         

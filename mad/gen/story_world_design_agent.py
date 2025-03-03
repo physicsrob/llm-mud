@@ -5,34 +5,37 @@ from pydantic_ai import Agent
 from pydantic_ai.models.openai import OpenAIModel
 import json
 
-from mad.config import creative_model_instance, story_model_instance, location_model_instance
+from mad.config import creative_model_instance, story_model_instance, powerful_model_instance
 from mad.core.char_agent import CharAgent
-from mad.gen.data_model import LocationDescription, StoryWorldComponents, CharacterDescription
-
+from mad.gen.write_story_agent import write_story 
+from mad.gen.data_model import LocationDescription, CharacterDescription
 
 # The prompt that guides basic character and location extraction
-component_extract_prompt = """
-You are a master literary analyst with expertise in character identification and location analysis.
+character_extract_prompt = """
+You are a master literary analyst with expertise in character identification.
 
-Given the story, your task is to:
+Given the story, your task is to ientify all characters that appear in the story:
+- For each character, provide the characters name
+- If the character is not named, use a brief description that uniquely identifies the character.
+- In no case should a character name be more than 4 words
 
-PART 1: CHARACTER ANALYSIS
-1. Identify all characters that appear in the story
-2. For each character, provide:
-   - Their complete name as presented in the story
-   - A minimal placeholder description (just enough to identify who they are)
-   - A minimal placeholder appearance (just enough to identify who they are)
+Example: ["John", "John's Grandma", "The Evil Witch"]
 
-PART 2: LOCATION ANALYSIS
-1. Identify all locations where important plot points or scenes take place in the story
-2. For each location, provide:
-   - A title/name for the location (e.g., "The Old Mill", "Central Park Bench")
-   - A unique ID derived from the title (lowercase with underscores, e.g., "the_old_mill")
-   - A minimal placeholder brief description (just enough to identify the location)
-   - A minimal placeholder long description (just enough to identify the location)
-3. Additionally, identify and invent if necessary, 1-5 locations which connect the key locations together.
+Your result should include at least 3 characters
+"""
 
-Your result should include at least 3 characters, and at least 3 locations.
+location_extract_prompt = """
+You are a master literary analyst.
+
+Given the story, your task is to identify a list of locations where important plot points or scenes take place:
+- If locations are not clear from the story, invent locations that would create a good scene locations for telling the story.
+- For each location generate a short location name which uniquely identifies the location.
+- Location name should be up to 4 words long
+- It is acceptable to invent new locations to help tell the story.
+
+Example: ["Village Center", "Old Tree", "Grandma's Cottage"]
+
+Your result should include at least 3 locations.
 """
 
 # The prompt for generating detailed character descriptions
@@ -291,7 +294,7 @@ async def identify_location_connections(story_content: str, locations: list[Loca
     
     # Create the connection identification agent
     connection_agent = Agent(
-        model=location_model_instance,
+        model=powerful_model_instance,
         result_type=_LocationConnections,
         system_prompt=location_connections_prompt,
         retries=2,
@@ -345,7 +348,7 @@ async def identify_character_locations(story_content: str, characters: list[Char
     
     # Create the character location identification agent
     char_location_agent = Agent(
-        model=location_model_instance,
+        model=powerful_model_instance,
         result_type=_CharacterLocations,
         system_prompt=character_locations_prompt,
         retries=2,
@@ -372,31 +375,22 @@ async def identify_character_locations(story_content: str, characters: list[Char
     print(f"  ✓ Identified {total_locations} potential locations for {len(char_locations)} characters")
     return char_locations
 
-async def extract_story_components(story_title: str, story_content: str) -> StoryWorldComponents:
+
+async def get_story_characters(story_title: str, story_content: str) -> list[CharacterDescription]:
     """
-    Extract and describe characters and key locations from a story.
-    
-    Args:
-        story_title: The title of the story
-        story_content: The content of the story to analyze
-        
-    Returns:
-        A StoryWorldComponents object containing characters and locations
+    Extract and describe characters from the story.
     """
-    print(f"\n==== EXTRACTING COMPONENTS FROM STORY: '{story_title}' ====")
-    print("Step 1: Identifying basic characters and locations...")
-    
     # Step 1: Extract basic components with placeholder descriptions
-    extraction_agent = Agent(
-        model=creative_model_instance,
-        result_type=StoryWorldComponents,
-        system_prompt=component_extract_prompt,
+    character_name_agent = Agent(
+        model=powerful_model_instance,
+        result_type=list[str],
+        system_prompt=character_extract_prompt,
         retries=3,
-        model_settings={"temperature": 0.3},  # Lower temperature for more consistent analysis
+        model_settings={"temperature": 0.3},
     )
     
     user_prompt = f"""
-    Analyze this story and identify the key characters and important locations:
+    Analyze this story and identify the characters:
     
     Title: {story_title}
     
@@ -404,88 +398,126 @@ async def extract_story_components(story_title: str, story_content: str) -> Stor
     {story_content}
     """
     
-    result = await extraction_agent.run(user_prompt)
-    components = result.data
+    result = await character_name_agent.run(user_prompt)
+    names:list[str]= result.data
     if result._state.retries > 1:
         debug(result)
-    
-    # Step 1.5: Identify location connections separately
-    components.location_connections = await identify_location_connections(story_content, components.locations)
-    
-    # Step 1.6: Identify character locations separately
-    components.character_locations = await identify_character_locations(story_content, components.characters, components.locations)
-    
-    print(f"✓ Identified {len(components.characters)} characters and {len(components.locations)} locations")
-    
-    # Step 2: Generate detailed descriptions concurrently
-    print("Step 2: Generating detailed descriptions concurrently...")
+    print("characters: ", names)
     
     # Create all tasks
     character_desc_tasks = []
     character_appear_tasks = []
+    
+    # Character description tasks
+    for character in names:
+        character_desc_tasks.append(character_description_agent(story_content, character))
+        character_appear_tasks.append(character_appearance_agent(story_content, character))
+    
+    # Execute all tasks concurrently
+    character_descriptions = await asyncio.gather(*character_desc_tasks)
+    character_appearances = await asyncio.gather(*character_appear_tasks)
+    
+    # Assign results to the components
+    characters = []
+    for i, character_name in enumerate(names):
+        characters.append(CharacterDescription(
+            id = character_name.replace(' ', '_').lower(),
+            name = character_name,
+            appearance = character_appearances[i],
+            description = character_descriptions[i]
+        ))
+    return characters
+
+async def get_story_locations(story_title: str, story_content: str) -> list[LocationDescription]:
+    """
+    Extract and describe locations from a story.
+    """
+    # Step 1: Extract basic components with placeholder descriptions
+    location_title_agent = Agent(
+        model=powerful_model_instance,
+        result_type=list[str],
+        system_prompt=location_extract_prompt,
+        retries=3,
+        model_settings={"temperature": 0.3},  # Lower temperature for more consistent analysis
+    )
+    
+    user_prompt = f"""
+    Analyze this story and identify the locations:
+    
+    Title: {story_title}
+    
+    Story:
+    {story_content}
+    """
+    
+    result = await location_title_agent.run(user_prompt)
+    titles:list[str] = result.data
+    if result._state.retries > 1:
+        debug(result)
+    print("locations: ", titles)
+    
+    # Create all tasks
     location_brief_tasks = []
     location_long_tasks = []
     
-    # Character description tasks
-    print("  Creating character description tasks...")
-    for character in components.characters:
-        character_desc_tasks.append(character_description_agent(story_content, character.name))
-        character_appear_tasks.append(character_appearance_agent(story_content, character.name))
-    
     # Location description tasks
-    print("  Creating location description tasks...")
-    for location in components.locations:
-        location_brief_tasks.append(location_brief_description_agent(story_content, location.title))
-        location_long_tasks.append(location_description_agent(story_content, location.title))
+    for location in titles:
+        location_brief_tasks.append(location_brief_description_agent(story_content, location))
+        location_long_tasks.append(location_description_agent(story_content, location))
     
     # Execute all tasks concurrently
-    print(f"  Executing {len(character_desc_tasks)} character description tasks concurrently...")
-    character_descriptions = await asyncio.gather(*character_desc_tasks)
-    print("  ✓ Character descriptions completed")
-    
-    print(f"  Executing {len(character_appear_tasks)} character appearance tasks concurrently...")
-    character_appearances = await asyncio.gather(*character_appear_tasks)
-    print("  ✓ Character appearances completed")
-    
-    print(f"  Executing {len(location_brief_tasks)} location brief description tasks concurrently...")
     location_brief_descs = await asyncio.gather(*location_brief_tasks)
-    print("  ✓ Location brief descriptions completed")
-    
-    print(f"  Executing {len(location_long_tasks)} location long description tasks concurrently...")
     location_long_descs = await asyncio.gather(*location_long_tasks)
-    print("  ✓ Location long descriptions completed")
     
-    # Assign results to the components
-    print("Step 3: Assigning generated descriptions to components...")
-    for i, character in enumerate(components.characters):
-        character.description = character_descriptions[i]
-        character.appearance = character_appearances[i]
+    locations = []
+    for i, location_title in enumerate(titles):
+        locations.append(LocationDescription(
+            id = location_title.replace(' ', '_').lower(),
+            title = location_title,
+            is_key = True,
+            brief_description = location_brief_descs[i],
+            long_description = location_long_descs[i],
+        ))
+
+    return locations
     
-    for i, location in enumerate(components.locations):
-        location.brief_description = location_brief_descs[i]
-        location.long_description = location_long_descs[i]
+
+
+async def create_world_design(world_desc, story_title: str, theme: str) -> object:
+    # Import here to avoid circular imports
+    from mad.gen.data_model import WorldDesign
     
-    # Step 4: Ensure location connections are bidirectional
-    print("Step 4: Ensuring bidirectional location connections...")
+    # Generate a story based on the world description
+    story_content = await write_story(world_desc, story_title, theme)
     
-    # Create a copy of the connections to avoid modifying while iterating
-    connections_copy = {loc_id: destinations.copy() for loc_id, destinations in components.location_connections.items()}
+    # Extract characters and locations from the story
+    print(f"Extracting story components from '{story_title}'...")
+    locations = await get_story_locations(story_title, story_content)
+    characters = await get_story_characters(story_title, story_content)
+
+    print(f"Extracted {len(locations)=} {len(characters)=}")
+
+    # Identify character locations 
+    character_locations = await identify_character_locations(story_content, characters, locations)
+   
+    # Create a WorldDesign from the components
+    world_design = WorldDesign(
+        world_description=world_desc,
+        characters=characters,
+        character_locations=character_locations,
+        starting_location_id="" # We'll set this after adding locations
+    )
     
-    # Iterate through all connections and ensure they're bidirectional
-    for source_id, destinations in connections_copy.items():
-        for dest_id in destinations:
-            # If destination doesn't have connections yet, initialize it
-            if dest_id not in components.location_connections:
-                components.location_connections[dest_id] = []
-            
-            # Add the reverse connection if it doesn't exist
-            if source_id not in components.location_connections[dest_id]:
-                components.location_connections[dest_id].append(source_id)
+    # Add all locations to the WorldDesign
+    for location in locations:
+        world_design.add_location(location)
     
-    # Ensure all locations have an entry in location_connections, even if empty
-    for location in components.locations:
-        if location.id not in components.location_connections:
-            components.location_connections[location.id] = []
+    # Identify location connections 
+    location_connections = await identify_location_connections(story_content, locations)
+
+    # Add bidirectional exits based on location connections
+    for location_id, connected_ids in location_connections.items():
+        for connected_id in connected_ids:
+            world_design.ensure_bidirectional_exits(location_id, connected_id)
     
-    print("✓ Component extraction and description complete!")
-    return components
+    return world_design

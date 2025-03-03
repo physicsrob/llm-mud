@@ -4,7 +4,7 @@ from pydantic_ai.models.openai import OpenAIModel
 # Model configuration
 #creative_model = "anthropic/claude-3.7-sonnet"
 creative_model = "openai/gpt-4o-mini"
-location_model = "anthropic/claude-3.7-sonnet"
+powerful_model =  "anthropic/claude-3.7-sonnet"
 char_agent_model = "anthropic/claude-3.7-sonnet"
 story_model = "google/gemini-2.0-flash-001" # Cheap and fast
 
@@ -18,8 +18,8 @@ creative_model_instance = OpenAIModel(
     api_key=OPENROUTER_API_KEY,
 )
 
-location_model_instance = OpenAIModel(
-    location_model,
+powerful_model_instance = OpenAIModel(
+    powerful_model,
     base_url=OPENROUTER_BASE_URL,
     api_key=OPENROUTER_API_KEY,
 )

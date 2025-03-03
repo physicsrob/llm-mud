@@ -1,8 +1,7 @@
-import asyncio
 from devtools import debug
 from pydantic_ai import Agent
 
-from mad.gen.data_model import WorldDescription, StoryWorldComponents
+from mad.gen.data_model import WorldDescription
 from mad.config import story_model_instance
 
 
@@ -27,19 +26,7 @@ Your story should:
 - Reflect the theme throughout the narrative
 """
 
-
-async def create_story_world(world_desc: WorldDescription, story_title: str, theme: str = None) -> StoryWorldComponents:
-    """
-    Generate a story set in the given world with the specified title, and extract its components.
-    
-    Args:
-        world_desc: Description of the game world
-        story_title: The title for the story to be generated
-        theme: Optional theme to influence the story creation
-        
-    Returns:
-        A StoryWorldComponents object containing the story characters and locations
-    """
+async def write_story(world_desc: WorldDescription, story_title: str, theme: str) -> str:
     # Initialize the agent for story generation
     generation_agent = Agent(
         model=story_model_instance,
@@ -71,12 +58,5 @@ async def create_story_world(world_desc: WorldDescription, story_title: str, the
     if result._state.retries > 1:
         debug(result)
     story_content = result.data
-    
-    # Extract characters and locations from the story
-    print(f"Extracting story components from '{story_title}'...")
-    # Import here to avoid circular imports
-    from mad.gen.story_component_agent import extract_story_components
-    components = await extract_story_components(story_title, story_content)
-    
-    # Return the StoryWorldComponents object
-    return components
+   
+    return story_content

@@ -3,7 +3,7 @@ from pydantic_ai import Agent
 from pydantic_ai.models.openai import OpenAIModel
 
 from mad.config import creative_model, OPENROUTER_BASE_URL, OPENROUTER_API_KEY
-from mad.gen.data_model import LocationDescription, LocationExit, LocationDescriptionWithExits
+from mad.gen.data_model import LocationDescription, LocationExit
 
 class LocationExits(BaseModel):
     exits: list[LocationExit] = Field(
@@ -97,7 +97,7 @@ async def create_all_location_exits(source_location: LocationDescription, destin
     result = await exit_agent.run(user_prompt)
     return result.data.exits
 
-async def get_location_exits(location: LocationDescription, all_locations: list[LocationDescription], connected_location_ids: list[str]) -> LocationDescriptionWithExits:
+async def get_location_exits(location: LocationDescription, all_locations: list[LocationDescription], connected_location_ids: list[str]) -> list[LocationExit]:
     """
     Generate exits for a location based on its connections to other locations.
     
@@ -105,9 +105,6 @@ async def get_location_exits(location: LocationDescription, all_locations: list[
         location: The location to generate exits for
         all_locations: List of all locations in the world
         connected_location_ids: List of location IDs that are connected to this location
-        
-    Returns:
-        LocationDescriptionWithExits containing the original location data plus exits
     """
     # Create a mapping of location IDs to location objects for easy lookup
     location_map = {r.id: r for r in all_locations}
@@ -121,11 +118,4 @@ async def get_location_exits(location: LocationDescription, all_locations: list[
     # Generate all exits in a single call
     exits = await create_all_location_exits(location, destination_locations)
     
-    # Create the location with exits
-    return LocationDescriptionWithExits(
-        id=location.id,
-        title=location.title,
-        brief_description=location.brief_description,
-        long_description=location.long_description,
-        exits=exits
-    )
+    return exits
