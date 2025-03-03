@@ -204,11 +204,8 @@ async def propose_replacement_location_interconnections(
     Returns:
         A _NewLocationConnections object with internal connection mapping
     """
-    print(f"DEBUG: propose_replacement_location_interconnections for {len(new_locations)} locations")
-    
     # If there are only 2 locations, we connect them automatically
     if len(new_locations) == 2:
-        print(f"DEBUG: Only 2 locations, connecting them automatically")
         internal_connections = {
             new_locations[0].id: [new_locations[1].id],
             new_locations[1].id: [new_locations[0].id]
@@ -216,7 +213,6 @@ async def propose_replacement_location_interconnections(
         return _NewLocationConnections(internal_connections=internal_connections)
     
     # For 3+ locations, use the agent to create a more complex connection graph
-    print(f"DEBUG: 3+ locations, using agent to create connection graph")
     connection_manager_agent = Agent(
         model=location_model_instance,
         result_type=_NewLocationConnections,
@@ -240,27 +236,22 @@ Here are the new locations that need to be interconnected:
 Please create a connection graph between ONLY these new locations. Each location should connect to at least one other location, and there should be no isolated locations. The connections should feel natural and intuitive based on the locations' themes and purposes.
 """
 
-    print(f"DEBUG: Calling agent to create connection graph")
     result = await connection_manager_agent.run(user_prompt)
     
     # Validate that all locations have at least one connection
     connections = result.data.internal_connections
     location_ids = [loc.id for loc in new_locations]
     
-    print(f"DEBUG: Agent returned connections for {len(connections)} locations")
-    
     # Ensure all locations are in the connections dictionary
     for loc_id in location_ids:
         if loc_id not in connections:
             connections[loc_id] = []
-            print(f"DEBUG: Added missing location {loc_id} to connections dictionary")
     
     # Check if any location has no connections
     disconnected = [loc_id for loc_id in location_ids if not connections.get(loc_id, [])]
     
     # If there are disconnected locations, connect them to a random other location
     if disconnected:
-        print(f"DEBUG: Found {len(disconnected)} disconnected locations")
         for loc_id in disconnected:
             # Find a random location to connect to
             other_locations = [other_id for other_id in location_ids if other_id != loc_id]
@@ -275,7 +266,6 @@ Please create a connection graph between ONLY these new locations. Each location
                 
                 connections[loc_id].append(random_loc_id)
                 connections[random_loc_id].append(loc_id)
-                print(f"DEBUG: Connected disconnected location {loc_id} to {random_loc_id}")
     
     return _NewLocationConnections(internal_connections=connections)
 
@@ -303,8 +293,6 @@ async def redistribute_connections(
         model_settings={"temperature": 0.2},
     )
     
-    print(f"DEBUG: redistribute_connections - Getting original connections for {original_location_id}")
-    
     # Since the original location has been removed, we'll use the locations_connecting_to_old
     # that was returned from world_design.remove_location() and passed to this function
     original_connections = []
@@ -318,11 +306,8 @@ async def redistribute_connections(
         })
     
     if not original_connections:
-        print(f"DEBUG: No original connections found for {original_location_id}")
         # If no connections, return empty assignment
         return _ConnectionDistribution(connection_assignments={})
-    
-    print(f"DEBUG: Found {len(original_connections)} original connections to redistribute")
     
     # Build a prompt for distributing the connections
     user_prompt = f"""\
@@ -346,14 +331,11 @@ Here are the new locations that will replace the original location:
 Please assign each original connection to exactly ONE of the new locations. The assignments should make logical sense based on the themes and purposes of both the connections and the new locations. Each original connection ID should map to exactly one new location ID.
 """
 
-    print(f"DEBUG: Calling agent to redistribute connections")
     result = await connection_distributor_agent.run(user_prompt)
     
     # Validate that all original connections are assigned
     assignments = result.data.connection_assignments
     original_connection_ids = [conn["id"] for conn in original_connections]
-    
-    print(f"DEBUG: Agent returned {len(assignments)} connection assignments")
     
     # Check if all original connections are assigned
     for conn_id in original_connection_ids:
@@ -388,24 +370,18 @@ async def improve_single_location_and_apply(
     Returns:
         Boolean indicating if any improvements were made
     """
-    print(f"DEBUG: Starting improvement for location {location_id}")
-    
     # Verify the location exists before starting
     location = world_design.find_location_by_id(location_id)
     if not location:
-        print(f"DEBUG: ERROR - Location {location_id} not found in world design before starting improvement")
         return False
         
     # STEP 1: Propose replacement locations
-    print(f"DEBUG: Calling propose_replacement_locations for {location_id}")
     location_proposal = await propose_replacement_locations(world_design, location_id)
     
     # If no new locations were proposed, return False
     if not location_proposal.new_locations:
         print(f"No improvements could be made for location {location_id}")
         return False
-    
-    print(f"DEBUG: Proposed {len(location_proposal.new_locations)} new locations")
     
     # Check if we're splitting the starting location
     if world_design.starting_location_id == location_id:
@@ -424,12 +400,8 @@ async def improve_single_location_and_apply(
                 "brief_description": connected_loc.brief_description
             })
     
-    print(f"DEBUG: Found {len(original_connections)} original connections to redistribute")
-    
     # Remove old location and get list of locations that connected to it
-    print(f"DEBUG: Removing original location {location_id}")
     locations_connecting_to_old = world_design.remove_location(location_id)
-    print(f"DEBUG: Locations connecting to removed location: {locations_connecting_to_old}")
     
     # Add the new locations to the world design
     new_location_ids = []
@@ -437,12 +409,10 @@ async def improve_single_location_and_apply(
         try:
             world_design.add_location(new_location)
             new_location_ids.append(new_location.id)
-            print(f"DEBUG: Added new location {new_location.id}")
         except ValueError as e:
             print(f"Warning: {e}")
     
     # STEP 2: Propose interconnections between the new locations
-    print(f"DEBUG: Calling propose_replacement_location_interconnections for {len(location_proposal.new_locations)} locations")
     new_location_connections = await propose_replacement_location_interconnections(
         world_design,
         location_proposal.new_locations,
@@ -450,11 +420,9 @@ async def improve_single_location_and_apply(
     )
     
     # Add internal connections between the new locations
-    print(f"DEBUG: Adding internal connections between new locations")
     for source_id, destinations in new_location_connections.internal_connections.items():
         source_loc = world_design.find_location_by_id(source_id)
         if not source_loc:
-            print(f"DEBUG: Source location {source_id} not found when adding internal connections")
             continue
             
         # Clear existing exits for the new locations
@@ -465,17 +433,12 @@ async def improve_single_location_and_apply(
         for dest_id in destinations:
             if world_design.find_location_by_id(dest_id):
                 world_design.ensure_bidirectional_exits(source_id, dest_id)
-                print(f"DEBUG: Added internal connection {source_id} <-> {dest_id}")
-            else:
-                print(f"DEBUG: Destination location {dest_id} not found when adding internal connections")
+            
     
     # STEP 3: Connect the new locations to original connections
-    print(f"DEBUG: Connecting new locations to original connections")
     
     # If we have original connections, distribute them among the new locations
     if original_connections:
-        print(f"DEBUG: Distributing {len(original_connections)} original connections among {len(new_location_ids)} new locations")
-        
         # Distribute original connections evenly across new locations
         for i, conn in enumerate(original_connections):
             # Pick a new location in a round-robin fashion
@@ -483,11 +446,6 @@ async def improve_single_location_and_apply(
             
             if world_design.find_location_by_id(conn["id"]) and world_design.find_location_by_id(new_loc_id):
                 world_design.ensure_bidirectional_exits(conn["id"], new_loc_id)
-                print(f"DEBUG: Added external connection {conn['id']} <-> {new_loc_id}")
-            else:
-                print(f"DEBUG: Could not connect {conn['id']} to {new_loc_id} - one or both locations not found")
-    else:
-        print(f"DEBUG: No original connections to redistribute")
     
     return True
 
