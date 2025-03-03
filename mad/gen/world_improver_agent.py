@@ -2,11 +2,11 @@ from devtools import debug
 import json
 import random
 from pydantic_ai import Agent
+from pydantic import BaseModel, Field
 from copy import deepcopy
 
 from mad.config import location_model_instance 
 from mad.gen.data_model import (
-    LocationImprovementPlan, 
     LocationDescription, 
     WorldDesign,
     LocationDescriptionWithExits,
@@ -60,59 +60,88 @@ def get_connection_summary(world_design: WorldDesign, new_ids: set[str] = None) 
     }
 
 
-# The prompt that guides world improvement for a single location
-single_location_improver_prompt = """
-You are a master world builder with expertise in game level design and world architecture.
+# Models for the three specialized agents
+class _LocationProposal(BaseModel):
+    """Proposal for 2-5 locations to replace an overcrowded location."""
+    new_locations: list[LocationDescription] = Field(
+        description="2-5 replacement locations that serve the narrative purpose of the original",
+        min_items=2,
+        max_items=5
+    )
 
-Your task is to analyze a specific location in a game world and improve its design by ensuring it doesn't have too many 
-connections (no more than 4 connections per location). When a location has more than 4 connections,
-you'll create new intermediate locations to better distribute these connections.
+class _NewLocationConnections(BaseModel):
+    """Connections between newly created locations."""
+    internal_connections: dict[str, list[str]] = Field(
+        description="Connections between the new locations. Maps location ID to list of connected location IDs."
+    )
+
+class _ConnectionDistribution(BaseModel):
+    """Assignment of original connections to new locations."""
+    connection_assignments: dict[str, str] = Field(
+        description="Maps original connection IDs to new location IDs. Each original connection is assigned to exactly one new location."
+    )
+
+# Prompts for the three specialized agents
+location_proposer_prompt = """
+You are a master narrative world builder with expertise in game level design.
+
+Your task is to analyze an overcrowded location in a game world and propose 2-5 new locations to replace it, focusing on narrative coherence and purpose.
 
 Given a specific overcrowded location, you will:
+1. Analyze its narrative purpose, connections, and context
+2. Create 2-5 new locations that collectively serve the same purpose
+3. Ensure each location has a distinct identity but fits within the overall theme
+4. Consider how these locations could logically connect (though you won't define connections)
 
-1. Analyze the input location 
-   - Examine the location that has more than 4 connections to other locations
-   - Determine which connections should be redistributed
-   - Consider the theme and narrative purpose of these connections
-
-2. Replace the input location with two output locations
-   - When combined the two output locations should serve a similar narrative pupose as the original input location
-   - In general make the two locations make sense together
-   - Design new locations that can serve as intermediaries to reduce direct connections
-   - Each new location should:
-     * Have a unique ID
-     * Have a meaningful title, brief description, and long description
-     * Fit the themes and atmosphere of the locations it connects
-   - Together the new locations should serve the same narrative purpose as the input location
-
-3. REDESIGN CONNECTIONS:
-   - Create a new connection map that:
-     * Distributes all the input connections to one of the two new locations
-     * Maintains the logical flow and narrative sense of movement between locations
-     
-Your solution should improve the specific overcrowded location while maintaining 
-the narrative coherence and accessibility of the original design.
+Produce locations that are interesting, varied, and serve the narrative needs.
 """
 
+connection_manager_prompt = """
+You are a master game level designer with expertise in spatial layout and navigation flows.
 
-async def improve_single_location(
+Your task is to create meaningful connections between a set of newly created locations that collectively replace an overcrowded location.
+
+Given a set of new locations, you will:
+1. Analyze each location's purpose and theme
+2. Create a sensible connection graph between ONLY these new locations
+3. Ensure no dead ends or isolated locations
+4. Design a navigation flow that feels natural and intuitive
+
+Focus ONLY on connections between the new locations, not to external locations.
+"""
+
+connection_distributor_prompt = """
+You are a master game level designer with expertise in connectivity and navigation.
+
+Your task is to assign external connections to newly created locations, ensuring logical flow and narrative sense.
+
+Given a set of new locations and original connections, you will:
+1. Analyze each original connection and new location
+2. Assign each original connection to exactly ONE of the new locations
+3. Ensure connections are distributed in a balanced way
+4. Maintain logical spatial relationships and thematic coherence
+
+For each original connection, choose the most appropriate new location to connect it to.
+"""
+
+async def propose_replacement_locations(
     world_design: WorldDesign, 
-    location_id: str,
-) -> LocationImprovementPlan:
+    location_id: str
+) -> _LocationProposal:
     """
-    Improve a single location in the world design by ensuring it has no more than 4 connections.
+    Create 2-5 new locations to replace an overcrowded location.
     
     Args:
         world_design: A WorldDesign object containing locations and their exits
         location_id: The ID of the location to improve
         
     Returns:
-        A LocationImprovementPlan object containing new locations and updated connections
+        A _LocationProposal object containing 2-5 new locations
     """
-    improver_agent = Agent(
+    location_proposer_agent = Agent(
         model=location_model_instance,
-        result_type=LocationImprovementPlan,
-        system_prompt=single_location_improver_prompt,
+        result_type=_LocationProposal,
+        system_prompt=location_proposer_prompt,
         retries=3,
         model_settings={"temperature": 0.2},
     )
@@ -125,32 +154,23 @@ async def improve_single_location(
     # Get connections for this location
     connection_count = len(location.exits)
     
-    # If the location doesn't have too many connections, return an empty improvement plan
+    # If the location doesn't have too many connections, return an empty proposal
     if connection_count <= 4:
-        return LocationImprovementPlan(
-            new_locations=[],
-            updated_connections={}
-        )
+        return _LocationProposal(new_locations=[])
     
-    # Count all connections to provide context
-    all_connection_counts = {
-        loc.id: len(loc.exits) 
-        for loc in world_design.locations
-        if len(loc.exits) > 0
-    }
+    # Get all room names for context
+    all_room_names = [loc.title for loc in world_design.locations]
     
     # Build a prompt focused on this specific location
     user_prompt = f"""\
-I need to improve a specific location in a world design that has too many connections (more than 4).
+I need to analyze an overcrowded location (more than 4 connections) and propose 2-5 new locations to replace it.
 
-The location to improve is:
+The overcrowded location is:
 ID: {location_id}
 Title: {location.title}
 Brief Description: {location.brief_description}
-Connections: {", ".join([exit.destination_id for exit in location.exits])}
-
-Current connection counts for all locations with more than 1 connection:
-{all_connection_counts}
+Long Description: {location.long_description}
+Connection Count: {connection_count}
 
 Here are the details of the connected locations:
 """
@@ -159,150 +179,207 @@ Here are the details of the connected locations:
     for exit in location.exits:
         connected_loc = world_design.find_location_by_id(exit.destination_id)
         if connected_loc:
-            user_prompt += f"ID: {connected_loc.id}\nTitle: {connected_loc.title}\nBrief: {connected_loc.brief_description}\n"
+            user_prompt += f"ID: {connected_loc.id}\nTitle: {connected_loc.title}\nBrief: {connected_loc.brief_description}\n\n"
     
-    result = await improver_agent.run(user_prompt)
-    plan = result.data
-    return plan
+    # Add context about all room names in the world
+    user_prompt += f"\nAll location names in the world for context:\n{', '.join(all_room_names)}\n\n"
+    user_prompt += "Please create 2-5 replacement locations that collectively fulfill the same purpose as the original location."
+    
+    result = await location_proposer_agent.run(user_prompt)
+    return result.data
 
-def handle_missing_connections(
+async def propose_replacement_location_interconnections(
     world_design: WorldDesign,
     new_locations: list[LocationDescription],
-    updated_connections: dict[str, list[str]],
     original_location_id: str
-) -> None:
+) -> _NewLocationConnections:
     """
-    Handle connections that might be missing from the plan by modifying the updated_connections dict in place.
+    Create connections between newly created locations.
     
     Args:
-        world_design: The world design containing the original location
-        new_locations: List of new LocationDescription objects
-        updated_connections: Dictionary mapping source IDs to lists of destination IDs to modify
-        original_location_id: ID of the original location being replaced
+        world_design: A WorldDesign object containing locations and their exits
+        new_locations: List of new locations to connect
+        original_location_id: The ID of the original location being replaced
+        
+    Returns:
+        A _NewLocationConnections object with internal connection mapping
     """
-    # Get original location's connections
-    original_location = world_design.find_location_by_id(original_location_id)
-    if not original_location:
-        # Location might already be removed, but we'll handle that gracefully
-        original_connections = []
-    else:
-        original_connections = [exit.destination_id for exit in original_location.exits]
+    print(f"DEBUG: propose_replacement_location_interconnections for {len(new_locations)} locations")
     
-    # Track all connections to ensure all original ones are accounted for
-    planned_connections = set()
-    new_location_ids = [loc.id for loc in new_locations]
+    # If there are only 2 locations, we connect them automatically
+    if len(new_locations) == 2:
+        print(f"DEBUG: Only 2 locations, connecting them automatically")
+        internal_connections = {
+            new_locations[0].id: [new_locations[1].id],
+            new_locations[1].id: [new_locations[0].id]
+        }
+        return _NewLocationConnections(internal_connections=internal_connections)
     
-    # Check all planned outgoing connections from the new locations
-    for source_id in new_location_ids:
-        if source_id in updated_connections:
-            for dest_id in updated_connections[source_id]:
-                planned_connections.add(dest_id)
+    # For 3+ locations, use the agent to create a more complex connection graph
+    print(f"DEBUG: 3+ locations, using agent to create connection graph")
+    connection_manager_agent = Agent(
+        model=location_model_instance,
+        result_type=_NewLocationConnections,
+        system_prompt=connection_manager_prompt,
+        retries=3,
+        model_settings={"temperature": 0.2},
+    )
     
-    # Check all planned incoming connections to the new locations
-    for source_id, destinations in updated_connections.items():
-        if source_id not in new_location_ids:
-            for dest_id in destinations:
-                if dest_id in new_location_ids:
-                    planned_connections.add(source_id)
-    
-    # Check if all original connections are accounted for in the plan
-    missing_connections = []
-    for conn in original_connections:
-        if conn not in planned_connections:
-            missing_connections.append(conn)
-    
-    # If there are missing connections, randomly assign them to one of the new locations
-    if missing_connections:
-        print(f"Warning: Plan is missing {len(missing_connections)} connections: {missing_connections}")
-        print("Randomly assigning missing connections to the new locations")
-        
-        # Ensure both new locations have connection entries
-        for loc_id in new_location_ids:
-            if loc_id not in updated_connections:
-                updated_connections[loc_id] = []
-        
-        # Assign each missing connection to a random new location
-        for conn in missing_connections:
-            # Pick one of the new locations randomly
-            random_loc = random.choice(new_location_ids)
-            if random_loc not in updated_connections:
-                updated_connections[random_loc] = []
-            
-            if conn not in updated_connections[random_loc]:
-                updated_connections[random_loc].append(conn)
-                print(f"  - Assigned missing connection {conn} to {random_loc}")
+    # Build a prompt for connecting the new locations
+    user_prompt = f"""\
+I need to create meaningful connections between a set of newly created locations that will replace a location with ID: {original_location_id}
 
+Here are the new locations that need to be interconnected:
 
-def add_new_locations_and_connections(
+"""
+    # Add details about each new location
+    for i, loc in enumerate(new_locations):
+        user_prompt += f"Location {i+1}:\nID: {loc.id}\nTitle: {loc.title}\nBrief Description: {loc.brief_description}\n\n"
+    
+    user_prompt += """
+Please create a connection graph between ONLY these new locations. Each location should connect to at least one other location, and there should be no isolated locations. The connections should feel natural and intuitive based on the locations' themes and purposes.
+"""
+
+    print(f"DEBUG: Calling agent to create connection graph")
+    result = await connection_manager_agent.run(user_prompt)
+    
+    # Validate that all locations have at least one connection
+    connections = result.data.internal_connections
+    location_ids = [loc.id for loc in new_locations]
+    
+    print(f"DEBUG: Agent returned connections for {len(connections)} locations")
+    
+    # Ensure all locations are in the connections dictionary
+    for loc_id in location_ids:
+        if loc_id not in connections:
+            connections[loc_id] = []
+            print(f"DEBUG: Added missing location {loc_id} to connections dictionary")
+    
+    # Check if any location has no connections
+    disconnected = [loc_id for loc_id in location_ids if not connections.get(loc_id, [])]
+    
+    # If there are disconnected locations, connect them to a random other location
+    if disconnected:
+        print(f"DEBUG: Found {len(disconnected)} disconnected locations")
+        for loc_id in disconnected:
+            # Find a random location to connect to
+            other_locations = [other_id for other_id in location_ids if other_id != loc_id]
+            if other_locations:
+                random_loc_id = random.choice(other_locations)
+                
+                # Add bidirectional connection
+                if loc_id not in connections:
+                    connections[loc_id] = []
+                if random_loc_id not in connections:
+                    connections[random_loc_id] = []
+                
+                connections[loc_id].append(random_loc_id)
+                connections[random_loc_id].append(loc_id)
+                print(f"DEBUG: Connected disconnected location {loc_id} to {random_loc_id}")
+    
+    return _NewLocationConnections(internal_connections=connections)
+
+async def redistribute_connections(
     world_design: WorldDesign,
     new_locations: list[LocationDescription],
-    updated_connections: dict[str, list[str]],
-    locations_connecting_to_old: list[str]
-) -> None:
+    original_location_id: str
+) -> _ConnectionDistribution:
     """
-    Add new locations and their connections to the world design.
+    Assign each original connection to one of the new locations.
     
     Args:
-        world_design: WorldDesign to modify in place
-        new_locations: List of new LocationDescription objects to add
-        updated_connections: Dictionary mapping source IDs to lists of destination IDs
-        locations_connecting_to_old: List of location IDs that connected to the removed location
+        world_design: A WorldDesign object containing locations and their exits
+        new_locations: List of new locations to distribute connections to
+        original_location_id: The ID of the original location being replaced
+        
+    Returns:
+        A _ConnectionDistribution object mapping original connections to new locations
     """
-    # Add new locations using WorldDesign's add_location method
-    new_location_ids = []
-    for new_location in new_locations:
-        try:
-            world_design.add_location(new_location)
-            new_location_ids.append(new_location.id)
-        except ValueError as e:
-            print(f"Warning: {e}")
+    connection_distributor_agent = Agent(
+        model=location_model_instance,
+        result_type=_ConnectionDistribution,
+        system_prompt=connection_distributor_prompt,
+        retries=3,
+        model_settings={"temperature": 0.2},
+    )
     
-    # Add the new connections from the plan
-    for source_id, destinations in updated_connections.items():
-        source_loc = world_design.find_location_by_id(source_id)
-        if not source_loc:
-            # This might be a new location we haven't processed yet
-            continue
-        
-        # Clear existing exits only for new locations that were just added
-        if source_id in new_location_ids:
-            source_loc.exits = []
-        
-        # Add planned exits using bidirectional connections
-        for dest_id in destinations:
-            if world_design.find_location_by_id(dest_id):
-                world_design.ensure_bidirectional_exits(source_id, dest_id)
+    print(f"DEBUG: redistribute_connections - Getting original connections for {original_location_id}")
     
-    # Make sure the new locations are connected to each other
-    if len(new_location_ids) == 2:  # If we have exactly two new locations
-        world_design.ensure_bidirectional_exits(new_location_ids[0], new_location_ids[1])
+    # Since the original location has been removed, we'll use the locations_connecting_to_old
+    # that was returned from world_design.remove_location() and passed to this function
+    original_connections = []
     
-    # Reconnect locations that previously connected to the old location
-    for loc_id in locations_connecting_to_old:
-        loc = world_design.find_location_by_id(loc_id)
-        if not loc:
-            continue
-            
-        # Check if this location is already connected to any new location
-        already_connected = False
-        for exit in loc.exits:
-            if exit.destination_id in new_location_ids:
-                already_connected = True
-                break
-        
-        # If not already connected, connect to a random new location
-        if not already_connected and new_location_ids:  # Make sure there are new locations
-            random_new_loc_id = random.choice(new_location_ids)
-            world_design.ensure_bidirectional_exits(loc_id, random_new_loc_id)
-            print(f"  - Reconnected {loc_id} to new location {random_new_loc_id}")
+    # Use the locations that were connecting to the old location
+    for loc in world_design.locations:
+        original_connections.append({
+            "id": loc.id,
+            "title": loc.title,
+            "brief_description": loc.brief_description
+        })
+    
+    if not original_connections:
+        print(f"DEBUG: No original connections found for {original_location_id}")
+        # If no connections, return empty assignment
+        return _ConnectionDistribution(connection_assignments={})
+    
+    print(f"DEBUG: Found {len(original_connections)} original connections to redistribute")
+    
+    # Build a prompt for distributing the connections
+    user_prompt = f"""\
+I need to assign original connections to newly created locations that replace an overcrowded location.
 
+Original Location ID: {original_location_id} (this location has been removed)
+
+Here are the new locations that will replace the original location:
+"""
+    # Add details about each new location
+    for i, loc in enumerate(new_locations):
+        user_prompt += f"New Location {i+1}:\nID: {loc.id}\nTitle: {loc.title}\nBrief Description: {loc.brief_description}\n\n"
+    
+    user_prompt += "\nHere are the original connections that need to be assigned to the new locations:\n"
+    
+    # Add details about each original connection
+    for i, conn in enumerate(original_connections):
+        user_prompt += f"Connection {i+1}:\nID: {conn['id']}\nTitle: {conn['title']}\nBrief Description: {conn['brief_description']}\n\n"
+    
+    user_prompt += """
+Please assign each original connection to exactly ONE of the new locations. The assignments should make logical sense based on the themes and purposes of both the connections and the new locations. Each original connection ID should map to exactly one new location ID.
+"""
+
+    print(f"DEBUG: Calling agent to redistribute connections")
+    result = await connection_distributor_agent.run(user_prompt)
+    
+    # Validate that all original connections are assigned
+    assignments = result.data.connection_assignments
+    original_connection_ids = [conn["id"] for conn in original_connections]
+    
+    print(f"DEBUG: Agent returned {len(assignments)} connection assignments")
+    
+    # Check if all original connections are assigned
+    for conn_id in original_connection_ids:
+        if conn_id not in assignments:
+            # Assign to random new location if missing
+            random_new_loc = random.choice(new_locations)
+            assignments[conn_id] = random_new_loc.id
+            print(f"Warning: Connection {conn_id} was not assigned. Randomly assigned to {random_new_loc.id}")
+    
+    # Check if any assignments are to invalid location IDs
+    new_location_ids = [loc.id for loc in new_locations]
+    for conn_id, loc_id in assignments.items():
+        if loc_id not in new_location_ids:
+            # Reassign to valid location
+            valid_loc_id = random.choice(new_location_ids)
+            assignments[conn_id] = valid_loc_id
+            print(f"Warning: Connection {conn_id} was assigned to invalid location {loc_id}. Reassigned to {valid_loc_id}")
+    
+    return _ConnectionDistribution(connection_assignments=assignments)
 
 async def improve_single_location_and_apply(
     world_design: WorldDesign,
     location_id: str
 ) -> bool:
     """
-    Improve a single location and apply the changes directly to the WorldDesign.
+    Improve a single location and apply the changes directly to the WorldDesign using the three specialized agents.
     
     Args:
         world_design: The WorldDesign to modify in place
@@ -311,43 +388,106 @@ async def improve_single_location_and_apply(
     Returns:
         Boolean indicating if any improvements were made
     """
-    # Get the improvement plan for this location
-    location_plan = await improve_single_location(world_design, location_id)
+    print(f"DEBUG: Starting improvement for location {location_id}")
     
-    # If no improvements were suggested, return False
-    if not location_plan.new_locations and not location_plan.updated_connections:
+    # Verify the location exists before starting
+    location = world_design.find_location_by_id(location_id)
+    if not location:
+        print(f"DEBUG: ERROR - Location {location_id} not found in world design before starting improvement")
+        return False
+        
+    # STEP 1: Propose replacement locations
+    print(f"DEBUG: Calling propose_replacement_locations for {location_id}")
+    location_proposal = await propose_replacement_locations(world_design, location_id)
+    
+    # If no new locations were proposed, return False
+    if not location_proposal.new_locations:
         print(f"No improvements could be made for location {location_id}")
         return False
     
-    # Check if plan includes exactly two new locations
-    if len(location_plan.new_locations) != 2:
-        print(f"Error: Expected exactly 2 new locations in the improvement plan for {location_id}, but got {len(location_plan.new_locations)}. Skipping improvement.")
-        return False
+    print(f"DEBUG: Proposed {len(location_proposal.new_locations)} new locations")
     
     # Check if we're splitting the starting location
     if world_design.starting_location_id == location_id:
         # Use the first new location as the starting location
-        world_design.starting_location_id = location_plan.new_locations[0].id
+        world_design.starting_location_id = location_proposal.new_locations[0].id
         print(f"Starting location {location_id} is being split. New starting location: {world_design.starting_location_id}")
     
-    # Remove old location and get list of locations that connected to it
-    locations_connecting_to_old = world_design.remove_location(location_id)
+    # Get list of locations connected to this one BEFORE removing it
+    original_connections = []
+    for exit in location.exits:
+        connected_loc = world_design.find_location_by_id(exit.destination_id)
+        if connected_loc:
+            original_connections.append({
+                "id": connected_loc.id,
+                "title": connected_loc.title,
+                "brief_description": connected_loc.brief_description
+            })
     
-    # Handle missing connections in the plan - this modifies location_plan.updated_connections in place
-    handle_missing_connections(
+    print(f"DEBUG: Found {len(original_connections)} original connections to redistribute")
+    
+    # Remove old location and get list of locations that connected to it
+    print(f"DEBUG: Removing original location {location_id}")
+    locations_connecting_to_old = world_design.remove_location(location_id)
+    print(f"DEBUG: Locations connecting to removed location: {locations_connecting_to_old}")
+    
+    # Add the new locations to the world design
+    new_location_ids = []
+    for new_location in location_proposal.new_locations:
+        try:
+            world_design.add_location(new_location)
+            new_location_ids.append(new_location.id)
+            print(f"DEBUG: Added new location {new_location.id}")
+        except ValueError as e:
+            print(f"Warning: {e}")
+    
+    # STEP 2: Propose interconnections between the new locations
+    print(f"DEBUG: Calling propose_replacement_location_interconnections for {len(location_proposal.new_locations)} locations")
+    new_location_connections = await propose_replacement_location_interconnections(
         world_design,
-        location_plan.new_locations, 
-        location_plan.updated_connections, 
+        location_proposal.new_locations,
         location_id
     )
     
-    # Add new locations with updated connections
-    add_new_locations_and_connections(
-        world_design,
-        location_plan.new_locations, 
-        location_plan.updated_connections, 
-        locations_connecting_to_old
-    )
+    # Add internal connections between the new locations
+    print(f"DEBUG: Adding internal connections between new locations")
+    for source_id, destinations in new_location_connections.internal_connections.items():
+        source_loc = world_design.find_location_by_id(source_id)
+        if not source_loc:
+            print(f"DEBUG: Source location {source_id} not found when adding internal connections")
+            continue
+            
+        # Clear existing exits for the new locations
+        if source_id in new_location_ids:
+            source_loc.exits = []
+        
+        # Add the internal connections
+        for dest_id in destinations:
+            if world_design.find_location_by_id(dest_id):
+                world_design.ensure_bidirectional_exits(source_id, dest_id)
+                print(f"DEBUG: Added internal connection {source_id} <-> {dest_id}")
+            else:
+                print(f"DEBUG: Destination location {dest_id} not found when adding internal connections")
+    
+    # STEP 3: Connect the new locations to original connections
+    print(f"DEBUG: Connecting new locations to original connections")
+    
+    # If we have original connections, distribute them among the new locations
+    if original_connections:
+        print(f"DEBUG: Distributing {len(original_connections)} original connections among {len(new_location_ids)} new locations")
+        
+        # Distribute original connections evenly across new locations
+        for i, conn in enumerate(original_connections):
+            # Pick a new location in a round-robin fashion
+            new_loc_id = new_location_ids[i % len(new_location_ids)]
+            
+            if world_design.find_location_by_id(conn["id"]) and world_design.find_location_by_id(new_loc_id):
+                world_design.ensure_bidirectional_exits(conn["id"], new_loc_id)
+                print(f"DEBUG: Added external connection {conn['id']} <-> {new_loc_id}")
+            else:
+                print(f"DEBUG: Could not connect {conn['id']} to {new_loc_id} - one or both locations not found")
+    else:
+        print(f"DEBUG: No original connections to redistribute")
     
     return True
 
@@ -442,5 +582,4 @@ async def improve_world_design(world_design: WorldDesign) -> None:
     print(f"\nFinal world state:")
     print(f"Total rooms: {final_summary['total_rooms']}")
     print(f"Total connections: {final_summary['total_connections']}")
-
 
